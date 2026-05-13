@@ -1,0 +1,12 @@
+node_modules
+.svelte-kit
+build
+.env
+.DS_Store
+*.log
+coverage
+.vite
+
+# Phaser assets (optional)
+public/assets/*
+!public/assets/.gitkeep
