@@ -10,6 +10,9 @@
  * pass.
  */
 
+import type { CaseDraft } from '../contracts/case-draft';
+import { extractJsonObject, validateCaseDraft } from '../contracts/case-draft';
+
 export interface GpuReport {
 	supported: boolean;
 	reason?: string;
@@ -163,14 +166,27 @@ export interface Message {
 	content: string;
 }
 
+export type StructuredMode = 'text' | 'json_object' | 'json_schema';
+
 /**
  * Stream one completion and time it. Timings are wall-clock from the browser,
  * which is what matters for the "is this usable on a phone" question.
+ *
+ * `mode` selects the response format handed to the runtime. `json_object` and
+ * `json_schema` enable constrained decoding, which is the interesting
+ * comparison for small models: without a constraint a 360M model tends to break
+ * the JSON mid-object.
  */
 export async function streamCompletion(
 	engine: LoadedEngine,
 	messages: Message[],
-	options: { maxTokens: number; temperature: number; onChunk?: (text: string) => void }
+	options: {
+		maxTokens: number;
+		temperature: number;
+		mode?: StructuredMode;
+		schema?: string;
+		onChunk?: (text: string) => void;
+	}
 ): Promise<GenerationMetrics> {
 	const started = performance.now();
 	let firstTokenMs = -1;
@@ -178,13 +194,22 @@ export async function streamCompletion(
 	let completionTokens: number | undefined;
 	let promptTokens: number | undefined;
 
-	const stream = await engine.chat.completions.create({
+	const request: Record<string, unknown> = {
 		messages,
 		stream: true,
 		stream_options: { include_usage: true },
 		max_tokens: options.maxTokens,
 		temperature: options.temperature
-	});
+	};
+
+	if (options.mode === 'json_object' || options.mode === 'json_schema') {
+		request.response_format = {
+			type: 'json_object',
+			...(options.mode === 'json_schema' && options.schema ? { schema: options.schema } : {})
+		};
+	}
+
+	const stream = await engine.chat.completions.create(request);
 
 	for await (const chunk of stream) {
 		const delta = (chunk as { choices?: { delta?: { content?: string } }[] }).choices?.[0]?.delta
@@ -246,4 +271,130 @@ Return JSON with exactly this shape:
 Use 3 characters and 3 clues. All ids must be lowercase kebab-case.`
 		}
 	];
+}
+
+/** JSON Schema of the draft contract, used for constrained decoding. */
+export function caseDraftJsonSchema(): string {
+	return JSON.stringify({
+		type: 'object',
+		properties: {
+			schemaVersion: { type: 'integer', enum: [1] },
+			title: { type: 'string' },
+			premise: { type: 'string' },
+			setting: { type: 'string' },
+			objective: { type: 'string' },
+			solution: { type: 'string' },
+			characters: {
+				type: 'array',
+				minItems: 1,
+				items: {
+					type: 'object',
+					properties: {
+						id: { type: 'string' },
+						name: { type: 'string' },
+						role: { type: 'string' },
+						description: { type: 'string' }
+					},
+					required: ['id', 'name', 'role', 'description']
+				}
+			},
+			clues: {
+				type: 'array',
+				minItems: 1,
+				items: {
+					type: 'object',
+					properties: {
+						id: { type: 'string' },
+						title: { type: 'string' },
+						description: { type: 'string' },
+						relatedCharacterIds: { type: 'array', items: { type: 'string' } }
+					},
+					required: ['id', 'title', 'description', 'relatedCharacterIds']
+				}
+			}
+		},
+		required: [
+			'schemaVersion',
+			'title',
+			'premise',
+			'setting',
+			'objective',
+			'solution',
+			'characters',
+			'clues'
+		]
+	});
+}
+
+export interface AttemptResult {
+	index: number;
+	mode: StructuredMode;
+	metrics: GenerationMetrics;
+	jsonOk: boolean;
+	validation: string;
+	draft?: CaseDraft;
+}
+
+/**
+ * Ask for a case draft up to `maxAttempts` times and stop at the first
+ * schema-valid answer. Retrying at a lower temperature is what a real
+ * generation flow would do, so the spike measures that, not a single-shot
+ * best case.
+ */
+export async function runCaseDraftAttempts(
+	engine: LoadedEngine,
+	topic: string,
+	options: {
+		maxAttempts: number;
+		mode: StructuredMode;
+		temperature?: number;
+		onChunk?: (text: string) => void;
+	}
+): Promise<{ attempts: AttemptResult[]; draft?: CaseDraft; ok: boolean }> {
+	const attempts: AttemptResult[] = [];
+
+	for (let index = 1; index <= Math.max(1, options.maxAttempts); index++) {
+		const metrics = await streamCompletion(engine, caseDraftPrompt(topic), {
+			maxTokens: 900,
+			temperature: index === 1 ? (options.temperature ?? 0.7) : 0.2,
+			mode: options.mode,
+			schema: caseDraftJsonSchema(),
+			onChunk: options.onChunk
+		});
+
+		const extracted = extractJsonObject(metrics.text);
+		if (!extracted.ok) {
+			attempts.push({
+				index,
+				mode: options.mode,
+				metrics,
+				jsonOk: false,
+				validation: `JSON parse failed: ${extracted.reason}`
+			});
+			continue;
+		}
+
+		const checked = validateCaseDraft(extracted.value);
+		if (checked.ok) {
+			attempts.push({
+				index,
+				mode: options.mode,
+				metrics,
+				jsonOk: true,
+				validation: 'schema-conform',
+				draft: checked.draft
+			});
+			return { attempts, draft: checked.draft, ok: true };
+		}
+
+		attempts.push({
+			index,
+			mode: options.mode,
+			metrics,
+			jsonOk: true,
+			validation: checked.issues.map((issue) => `${issue.path} ${issue.message}`).join('; ')
+		});
+	}
+
+	return { attempts, ok: false };
 }

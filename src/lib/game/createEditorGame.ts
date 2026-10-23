@@ -5,6 +5,7 @@ import {
 	panBy,
 	zoomAround,
 	type CameraState,
+	type Point,
 	type Size,
 	type ZoomLimits
 } from './camera';
@@ -13,6 +14,9 @@ import {
 export const MAP_SIZE: Size = { width: 2400, height: 1600 };
 
 const ZOOM_LIMITS: ZoomLimits = { minZoom: 0.15, maxZoom: 4 };
+
+/** Rendering above 3× device resolution only costs fill rate. */
+const MAX_PIXEL_RATIO = 3;
 
 export interface EditorGameHandle {
 	/** Frame the whole map. */
@@ -28,21 +32,44 @@ interface Options {
 	onCamera?: (camera: CameraState) => void;
 }
 
+interface TrackedPointer {
+	x: number;
+	y: number;
+	previousX: number;
+	previousY: number;
+}
+
 /**
  * Boots the map workspace: a Phaser canvas with pan (drag), zoom (wheel and
  * pinch) and a placeholder map so the interaction can be verified before the
  * real case rendering exists.
  *
+ * The canvas backing store is sized in *device* pixels so text and lines stay
+ * sharp on phones and high-DPI screens, while all camera maths — and every
+ * pointer coordinate used for it — stays in CSS pixels.
+ *
  * This module touches `window`/WebGL, so it may only be imported in the
  * browser (dynamic import from `onMount`).
  */
 export function createEditorGame(parent: HTMLElement, options: Options = {}): EditorGameHandle {
+	const pixelRatio = Math.min(window.devicePixelRatio || 1, MAX_PIXEL_RATIO);
+	/** Text is rasterised once, so oversample it to survive the zoom range. */
+	const textResolution = Math.min(pixelRatio * 2, 4);
+
 	let camera: CameraState | null = null;
 	let game: Phaser.Game;
+	let resizeObserver: ResizeObserver | null = null;
 
+	/** CSS pixels — the coordinate system of the camera maths. */
 	const viewport = (): Size => ({
-		width: parent.clientWidth || 1,
-		height: parent.clientHeight || 1
+		width: Math.max(1, parent.clientWidth),
+		height: Math.max(1, parent.clientHeight)
+	});
+
+	/** Phaser reports pointer coordinates in device pixels; the maths wants CSS pixels. */
+	const toCss = (point: Point): Point => ({
+		x: point.x / pixelRatio,
+		y: point.y / pixelRatio
 	});
 
 	const emit = () => {
@@ -64,10 +91,28 @@ export function createEditorGame(parent: HTMLElement, options: Options = {}): Ed
 		apply();
 	};
 
+	/** Keep the canvas backing store at device resolution. */
+	const syncCanvasSize = () => {
+		const css = viewport();
+		const width = Math.round(css.width * pixelRatio);
+		const height = Math.round(css.height * pixelRatio);
+		if (game.scale.width !== width || game.scale.height !== height) {
+			game.scale.resize(width, height);
+		}
+		const canvas = game.canvas;
+		if (canvas) {
+			canvas.style.width = '100%';
+			canvas.style.height = '100%';
+			canvas.style.display = 'block';
+			// Touch gestures must reach the game, not the page scroll.
+			canvas.style.touchAction = 'none';
+		}
+	};
+
 	class MapScene extends Phaser.Scene {
-		private pointers = new Map<number, { x: number; y: number }>();
-		private pinchStart: { distance: number; zoom: number } | null = null;
-		private dragging = false;
+		private pointers = new Map<number, TrackedPointer>();
+		private pinchDistance = 0;
+		private pinchCentre: Point = { x: 0, y: 0 };
 
 		constructor() {
 			super('map');
@@ -121,7 +166,8 @@ export function createEditorGame(parent: HTMLElement, options: Options = {}): Ed
 						fontSize: '26px',
 						color: '#e8ecf2'
 					})
-					.setOrigin(0, 0.5);
+					.setOrigin(0, 0.5)
+					.setResolution(textResolution);
 			}
 
 			this.add
@@ -130,52 +176,74 @@ export function createEditorGame(parent: HTMLElement, options: Options = {}): Ed
 					fontSize: '34px',
 					color: '#97a3b4'
 				})
-				.setOrigin(0, 0);
+				.setOrigin(0, 0)
+				.setResolution(textResolution);
 		}
 
 		private bindInput() {
 			this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-				this.pointers.set(pointer.id, { x: pointer.x, y: pointer.y });
-				this.dragging = this.pointers.size === 1;
-				if (this.pointers.size === 2) {
-					this.pinchStart = {
-						distance: this.pointerDistance(),
-						zoom: camera?.zoom ?? 1
-					};
-				}
+				const point = toCss({ x: pointer.x, y: pointer.y });
+				this.pointers.set(pointer.id, {
+					x: point.x,
+					y: point.y,
+					previousX: point.x,
+					previousY: point.y
+				});
+				this.resetPinch();
 			});
 
-			this.input.on('pointerup', (pointer: Phaser.Input.Pointer) => {
+			const release = (pointer: Phaser.Input.Pointer) => {
 				this.pointers.delete(pointer.id);
-				if (this.pointers.size < 2) this.pinchStart = null;
-				if (this.pointers.size === 0) this.dragging = false;
-			});
+				this.resetPinch();
+			};
+			this.input.on('pointerup', release);
+			this.input.on('pointerout', release);
 
 			this.input.on(
 				'pointermove',
 				(pointer: Phaser.Input.Pointer) => {
 					if (!camera) return;
-					const known = this.pointers.has(pointer.id);
-					if (known) this.pointers.set(pointer.id, { x: pointer.x, y: pointer.y });
+					const tracked = this.pointers.get(pointer.id);
+					if (!tracked) return;
 
-					if (this.pointers.size >= 2 && this.pinchStart && known) {
-						const distance = this.pointerDistance();
-						if (this.pinchStart.distance > 0 && distance > 0) {
-							const zoom = this.pinchStart.zoom * (distance / this.pinchStart.distance);
-							setCamera(
-								zoomAround(camera, this.pinchCenter(), zoom / camera.zoom, viewport(), ZOOM_LIMITS)
-							);
+					const point = toCss({ x: pointer.x, y: pointer.y });
+					tracked.previousX = tracked.x;
+					tracked.previousY = tracked.y;
+					tracked.x = point.x;
+					tracked.y = point.y;
+
+					const active = [...this.pointers.values()].slice(0, 2);
+
+					// Two fingers: pinch around the midpoint and pan with it.
+					if (active.length === 2) {
+						const distance = Math.hypot(active[0].x - active[1].x, active[0].y - active[1].y);
+						const centre = {
+							x: (active[0].x + active[1].x) / 2,
+							y: (active[0].y + active[1].y) / 2
+						};
+
+						if (this.pinchDistance > 0 && distance > 0) {
+							const factor = distance / this.pinchDistance;
+							let next = zoomAround(camera, centre, factor, viewport(), ZOOM_LIMITS);
+							const drift = {
+								x: centre.x - this.pinchCentre.x,
+								y: centre.y - this.pinchCentre.y
+							};
+							if (drift.x !== 0 || drift.y !== 0) next = panBy(next, drift);
+							setCamera(next);
 						}
+
+						this.pinchDistance = distance;
+						this.pinchCentre = centre;
 						return;
 					}
 
-					if (this.dragging && known) {
-						const delta = {
-							x: pointer.x - pointer.prevPosition.x,
-							y: pointer.y - pointer.prevPosition.y
-						};
-						if (delta.x !== 0 || delta.y !== 0) setCamera(panBy(camera, delta));
-					}
+					// One finger or mouse: drag to pan.
+					const delta = {
+						x: tracked.x - tracked.previousX,
+						y: tracked.y - tracked.previousY
+					};
+					if (delta.x !== 0 || delta.y !== 0) setCamera(panBy(camera, delta));
 				},
 				this
 			);
@@ -186,7 +254,13 @@ export function createEditorGame(parent: HTMLElement, options: Options = {}): Ed
 					if (!camera) return;
 					const factor = dy > 0 ? 1 / 1.12 : 1.12;
 					setCamera(
-						zoomAround(camera, { x: pointer.x, y: pointer.y }, factor, viewport(), ZOOM_LIMITS)
+						zoomAround(
+							camera,
+							toCss({ x: pointer.x, y: pointer.y }),
+							factor,
+							viewport(),
+							ZOOM_LIMITS
+						)
 					);
 				}
 			);
@@ -196,31 +270,51 @@ export function createEditorGame(parent: HTMLElement, options: Options = {}): Ed
 			});
 		}
 
-		private pointerDistance(): number {
-			const values = [...this.pointers.values()];
-			if (values.length < 2) return 0;
-			const dx = values[0].x - values[1].x;
-			const dy = values[0].y - values[1].y;
-			return Math.hypot(dx, dy);
-		}
-
-		private pinchCenter() {
-			const values = [...this.pointers.values()];
-			if (values.length < 2) return { x: viewport().width / 2, y: viewport().height / 2 };
-			return { x: (values[0].x + values[1].x) / 2, y: (values[0].y + values[1].y) / 2 };
+		/** Restart pinch measurement whenever the finger count changes. */
+		private resetPinch() {
+			const active = [...this.pointers.values()].slice(0, 2);
+			if (active.length === 2) {
+				this.pinchDistance = Math.hypot(active[0].x - active[1].x, active[0].y - active[1].y);
+				this.pinchCentre = {
+					x: (active[0].x + active[1].x) / 2,
+					y: (active[0].y + active[1].y) / 2
+				};
+			} else {
+				this.pinchDistance = 0;
+			}
 		}
 	}
 
+	const css = viewport();
 	game = new Phaser.Game({
 		type: Phaser.AUTO,
 		parent,
 		backgroundColor: '#0f1218',
+		width: Math.round(css.width * pixelRatio),
+		height: Math.round(css.height * pixelRatio),
 		scale: {
-			mode: Phaser.Scale.RESIZE
+			mode: Phaser.Scale.NONE,
+			autoCenter: Phaser.Scale.NO_CENTER
+		},
+		input: {
+			// Two touch pointers plus the mouse; without this a second finger is
+			// ignored and pinch never starts.
+			activePointers: 3
 		},
 		render: { antialias: true },
 		scene: [MapScene]
 	});
+
+	syncCanvasSize();
+
+	if (typeof ResizeObserver !== 'undefined') {
+		resizeObserver = new ResizeObserver(() => {
+			syncCanvasSize();
+			if (camera) setCamera(camera);
+			else apply();
+		});
+		resizeObserver.observe(parent);
+	}
 
 	return {
 		fit() {
@@ -241,6 +335,8 @@ export function createEditorGame(parent: HTMLElement, options: Options = {}): Ed
 			return camera ?? { x: 0, y: 0, zoom: 1 };
 		},
 		destroy() {
+			resizeObserver?.disconnect();
+			resizeObserver = null;
 			game.destroy(true);
 		}
 	};

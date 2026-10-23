@@ -47,11 +47,30 @@ For each device:
 
 ## Results
 
-No measurements yet — to be filled from the deployed preview build.
+| Date       | Device                                               | Browser           | WebGPU adapter                   | Model                       | Mode   | Load (cold) | First token | Total  | Completion tokens | Chars/s | Schema valid                        |
+| ---------- | ---------------------------------------------------- | ----------------- | -------------------------------- | --------------------------- | ------ | ----------- | ----------- | ------ | ----------------- | ------- | ----------------------------------- |
+| 2026-10-23 | Android 10 phone, 8 CPU threads, 8 GB (browser hint) | Chrome 155 mobile | not exposed (empty adapter info) | SmolLM2-360M-Instruct-q4f16 | `text` | 77.3 s      | 13.8 s      | 24.7 s | 163               | 17.1    | **no** — JSON broke at position 102 |
 
-| Date | Device | Browser | WebGPU adapter | Model | Load (cold) | Load (warm) | First token | Total | Completion tokens | Chars/s | Schema valid |
-| ---- | ------ | ------- | -------------- | ----- | ----------- | ----------- | ----------- | ----- | ----------------- | ------- | ------------ |
-| —    | —      | —       | —              | —     | —           | —           | —           | —     | —                 | —       | —            |
+### Findings from the first run
+
+- WebGPU is available on the phone, so the capability gate passes — but the
+  numbers do not: 77 s for a 376 MB model, 13.8 s to the first token and
+  ~6.6 tokens/s make the editor wait unacceptable.
+- A 360M model at temperature 0.7 does not produce reliable JSON on its own: the
+  answer broke off mid-object. Plain prompting is therefore not enough for a
+  structured draft, regardless of speed.
+- The adapter block is empty on Android Chrome; the page must treat missing
+  adapter fields as normal, not as an error.
+- `crossOriginIsolated` is false, as expected on GitHub Pages.
+
+### Follow-ups implemented after the first run
+
+- The harness now offers **constrained decoding** (`response_format`
+  `json_object`, optionally with a JSON Schema of the draft contract) and a
+  **retry count**, and reports every attempt — so the next measurement answers
+  whether structure can be forced rather than merely asked for.
+- The measurement above should be repeated in `json_schema` mode; that is the
+  configuration a real generation flow would use.
 
 ## Pass criteria
 

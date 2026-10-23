@@ -2,17 +2,16 @@
 	import { onMount } from 'svelte';
 	import {
 		availableModels,
-		caseDraftPrompt,
 		detectGpu,
 		heapMegabytes,
 		loadModel,
-		streamCompletion,
+		runCaseDraftAttempts,
+		type AttemptResult,
 		type GpuReport,
 		type LoadedEngine,
-		type ModelOption
+		type ModelOption,
+		type StructuredMode
 	} from '#lib/ai/local/webllm-spike';
-	import { extractJsonObject, validateCaseDraft } from '#lib/ai/contracts/case-draft';
-	import type { GenerationMetrics } from '#lib/ai/local/webllm-spike';
 
 	const STORAGE_KEY = 'krimimap:spike-report';
 
@@ -26,9 +25,11 @@
 	let loadMs = $state<number | null>(null);
 	let generating = $state(false);
 	let topic = $state('ein verschwundener Förster im Nebelwald');
+	let mode = $state<StructuredMode>('text');
+	let maxAttempts = $state(1);
 	let output = $state('');
-	let metrics = $state<GenerationMetrics | null>(null);
-	let validation = $state<string>('');
+	let attempts = $state<AttemptResult[]>([]);
+	let verdict = $state('');
 	let error = $state<string | null>(null);
 	let report = $state<string>('');
 	let copied = $state(false);
@@ -44,13 +45,14 @@
 	});
 
 	const model = $derived(models.find((candidate) => candidate.id === modelId));
+	const lastAttempt = $derived(attempts.length > 0 ? attempts[attempts.length - 1] : null);
 
 	async function doLoad() {
 		error = null;
 		loading = true;
 		output = '';
-		metrics = null;
-		validation = '';
+		attempts = [];
+		verdict = '';
 		loadProgress = 0;
 		loadText = 'initialising runtime…';
 		try {
@@ -72,28 +74,21 @@
 		error = null;
 		generating = true;
 		output = '';
-		metrics = null;
-		validation = 'checking schema…';
+		attempts = [];
+		verdict = 'läuft…';
 		const heapBefore = heapMegabytes();
+
 		try {
-			const result = await streamCompletion(engine, caseDraftPrompt(topic), {
-				maxTokens: 900,
+			const result = await runCaseDraftAttempts(engine, topic, {
+				maxAttempts,
+				mode,
 				temperature: 0.7,
 				onChunk: (text) => (output = text)
 			});
-			metrics = result;
-
-			const extracted = extractJsonObject(result.text);
-			if (!extracted.ok) {
-				validation = `JSON parse failed: ${extracted.reason}`;
-			} else {
-				const checked = validateCaseDraft(extracted.value);
-				validation = checked.ok
-					? 'JSON valid and schema-conform ✔'
-					: `JSON parsed, schema issues: ${checked.issues
-							.map((issue) => `${issue.path} ${issue.message}`)
-							.join('; ')}`;
-			}
+			attempts = result.attempts;
+			verdict = result.ok
+				? `schema-konform nach Versuch ${result.attempts.length} ✔`
+				: `nach ${result.attempts.length} Versuch(en) kein schema-konformer Entwurf`;
 
 			report = JSON.stringify(
 				{
@@ -103,22 +98,30 @@
 					modelLicence: model?.license,
 					vramRequiredMB: model?.vramMB,
 					modelLoadMs: loadMs,
-					firstTokenMs: result.firstTokenMs,
-					totalMs: result.totalMs,
-					promptTokens: result.promptTokens,
-					completionTokens: result.completionTokens,
-					charsPerSecond: Number(result.charsPerSecond.toFixed(1)),
+					mode,
+					maxAttempts,
+					attempts: result.attempts.map((attempt) => ({
+						index: attempt.index,
+						jsonOk: attempt.jsonOk,
+						validation: attempt.validation,
+						firstTokenMs: Math.round(attempt.metrics.firstTokenMs),
+						totalMs: Math.round(attempt.metrics.totalMs),
+						promptTokens: attempt.metrics.promptTokens,
+						completionTokens: attempt.metrics.completionTokens,
+						charsPerSecond: Number(attempt.metrics.charsPerSecond.toFixed(1))
+					})),
+					schemaConform: result.ok,
+					verdict,
 					heapBeforeMB: heapBefore,
 					heapAfterMB: heapMegabytes(),
-					crossOriginIsolated: gpu?.crossOriginIsolated,
-					jsonValid: !validation.includes('failed') && !validation.includes('issues'),
-					validation
+					crossOriginIsolated: gpu?.crossOriginIsolated
 				},
 				null,
 				2
 			);
 			localStorage.setItem(STORAGE_KEY, report);
 		} catch (cause) {
+			verdict = '';
 			error = cause instanceof Error ? cause.message : String(cause);
 		} finally {
 			generating = false;
@@ -251,6 +254,24 @@
 		<h2>3. Strukturierten Fall generieren</h2>
 		<div class="row">
 			<input type="text" bind:value={topic} disabled={generating} style="flex: 1 1 18rem" />
+		</div>
+		<div class="row" style="margin-top: 0.6rem">
+			<label class="small">
+				Antwortformat
+				<select bind:value={mode} disabled={generating}>
+					<option value="text">Freitext (Modell soll JSON schreiben)</option>
+					<option value="json_object">JSON-Modus (erzwungen)</option>
+					<option value="json_schema">JSON + Schema (erzwungen)</option>
+				</select>
+			</label>
+			<label class="small">
+				Versuche
+				<select bind:value={maxAttempts} disabled={generating}>
+					<option value={1}>1</option>
+					<option value={2}>2</option>
+					<option value={3}>3</option>
+				</select>
+			</label>
 			<button class="primary" onclick={doGenerate} disabled={!engine || generating}>
 				{generating ? 'Generiert…' : 'Test starten'}
 			</button>
@@ -266,41 +287,61 @@
 			<p class="errorbox">Fehler: {error}</p>
 		{/if}
 
-		{#if metrics}
+		{#if verdict}
+			<p
+				class="small"
+				class:ok={verdict.includes('✔')}
+				class:bad={!verdict.includes('✔') && !verdict.includes('läuft')}
+			>
+				{verdict}
+			</p>
+		{/if}
+
+		{#if attempts.length > 0}
 			<table>
+				<thead>
+					<tr>
+						<th>Versuch</th>
+						<th>TTFT</th>
+						<th>Gesamt</th>
+						<th>Tokens</th>
+						<th>Zeichen/s</th>
+						<th>Ergebnis</th>
+					</tr>
+				</thead>
 				<tbody>
-					<tr><th>Time to first token</th><td>{metrics.firstTokenMs.toFixed(0)} ms</td></tr>
-					<tr>
-						<th>Gesamtzeit</th>
-						<td>{(metrics.totalMs / 1000).toFixed(1)} s</td>
-					</tr>
-					<tr>
-						<th>Tokens (prompt / completion)</th>
-						<td>{metrics.promptTokens ?? '?'} / {metrics.completionTokens ?? '?'}</td>
-					</tr>
-					<tr>
-						<th>Ausgabegeschwindigkeit</th>
-						<td>{metrics.charsPerSecond.toFixed(1)} Zeichen/s</td>
-					</tr>
-					<tr>
-						<th>Schema-Prüfung</th>
-						<td
-							class:ok={validation.includes('gültig') || validation.includes('valid')}
-							class:bad={validation.includes('failed') || validation.includes('issues')}
-						>
-							{validation}
-						</td>
-					</tr>
-					<tr>
-						<th>JS-Heap</th>
-						<td>{heapMegabytes() ?? '—'} MB (nur Chrome, kein GPU-Speicher)</td>
-					</tr>
+					{#each attempts as attempt (attempt.index)}
+						<tr>
+							<td>{attempt.index}</td>
+							<td>{(attempt.metrics.firstTokenMs / 1000).toFixed(1)} s</td>
+							<td>{(attempt.metrics.totalMs / 1000).toFixed(1)} s</td>
+							<td
+								>{attempt.metrics.promptTokens ?? '?'} / {attempt.metrics.completionTokens ??
+									'?'}</td
+							>
+							<td>{attempt.metrics.charsPerSecond.toFixed(1)}</td>
+							<td
+								class:ok={attempt.validation === 'schema-conform'}
+								class:bad={attempt.validation !== 'schema-conform'}
+							>
+								{attempt.validation}
+							</td>
+						</tr>
+					{/each}
 				</tbody>
 			</table>
+			<p class="small muted">
+				JS-Heap: {heapMegabytes() ?? '—'} MB (nur Chrome, kein GPU-Speicher)
+				{#if lastAttempt && lastAttempt.metrics.completionTokens}
+					· {((lastAttempt.metrics.completionTokens / lastAttempt.metrics.totalMs) * 1000).toFixed(
+						1
+					)} Tokens/s
+				{/if}
+			</p>
 		{/if}
 
 		{#if output}
-			<h3 class="small muted">Rohausgabe des Modells</h3>
+			<h3 class="small muted">Rohausgabe der letzten Generierung</h3>
 			<pre>{output}</pre>
 		{/if}
 	</div>
@@ -359,5 +400,12 @@
 
 	input[type='text'] {
 		min-width: 0;
+	}
+
+	label {
+		display: inline-flex;
+		gap: 0.4rem;
+		align-items: center;
+		color: var(--text-dim);
 	}
 </style>
