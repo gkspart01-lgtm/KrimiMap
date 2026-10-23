@@ -18,6 +18,13 @@ const ZOOM_LIMITS: ZoomLimits = { minZoom: 0.15, maxZoom: 4 };
 /** Rendering above 3× device resolution only costs fill rate. */
 const MAX_PIXEL_RATIO = 3;
 
+/**
+ * How far (as a fraction of the viewport) the camera may be dragged past the
+ * map edge. Without slack a map that fits the screen cannot be moved at all and
+ * dragging feels unresponsive.
+ */
+const PAN_ALLOWANCE = 0.15;
+
 export interface EditorGameHandle {
 	/** Frame the whole map. */
 	fit(): void;
@@ -66,11 +73,20 @@ export function createEditorGame(parent: HTMLElement, options: Options = {}): Ed
 		height: Math.max(1, parent.clientHeight)
 	});
 
-	/** Phaser reports pointer coordinates in device pixels; the maths wants CSS pixels. */
-	const toCss = (point: Point): Point => ({
-		x: point.x / pixelRatio,
-		y: point.y / pixelRatio
-	});
+	/**
+	 * Phaser reports pointer coordinates in canvas pixels (canvas size × device
+	 * ratio), while all camera maths happens in CSS pixels. Normalising through
+	 * the actual canvas size keeps drags exactly under the finger even if the
+	 * canvas ends up displayed at a different size than requested.
+	 */
+	const toCss = (point: Point): Point => {
+		const scale = game?.scale;
+		const width = scale?.width ?? 0;
+		const height = scale?.height ?? 0;
+		const view = viewport();
+		if (!width || !height) return point;
+		return { x: (point.x / width) * view.width, y: (point.y / height) * view.height };
+	};
 
 	const emit = () => {
 		if (camera) options.onCamera?.(camera);
@@ -87,11 +103,11 @@ export function createEditorGame(parent: HTMLElement, options: Options = {}): Ed
 	};
 
 	const setCamera = (next: CameraState) => {
-		camera = clampToMap(next, MAP_SIZE, viewport(), ZOOM_LIMITS);
+		camera = clampToMap(next, MAP_SIZE, viewport(), ZOOM_LIMITS, PAN_ALLOWANCE);
 		apply();
 	};
 
-	/** Keep the canvas backing store at device resolution. */
+	/** Keep the canvas backing store at device resolution and its CSS size exact. */
 	const syncCanvasSize = () => {
 		const css = viewport();
 		const width = Math.round(css.width * pixelRatio);
@@ -101,8 +117,10 @@ export function createEditorGame(parent: HTMLElement, options: Options = {}): Ed
 		}
 		const canvas = game.canvas;
 		if (canvas) {
-			canvas.style.width = '100%';
-			canvas.style.height = '100%';
+			// Explicit pixel sizes instead of 100%: Phaser derives the pointer
+			// transform from the canvas browser size, so it must be unambiguous.
+			canvas.style.width = `${css.width}px`;
+			canvas.style.height = `${css.height}px`;
 			canvas.style.display = 'block';
 			// Touch gestures must reach the game, not the page scroll.
 			canvas.style.touchAction = 'none';

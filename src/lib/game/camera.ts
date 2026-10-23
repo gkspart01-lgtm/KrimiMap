@@ -90,25 +90,34 @@ export function zoomAround(
  * Keep the visible area inside the map. When the map is smaller than the
  * viewport on an axis the map is centred on that axis instead of being pinned
  * to a corner, which avoids dead space the player cannot reach.
+ *
+ * `allowance` (a fraction of the viewport, 0..0.9) lets the camera move past
+ * the map edge. Without it, a map that exactly fits the screen cannot be
+ * dragged at all, which feels broken even though it is technically correct.
  */
 export function clampToMap(
 	camera: CameraState,
 	map: Size,
 	viewport: Size,
-	limits: ZoomLimits = DEFAULT_ZOOM_LIMITS
+	limits: ZoomLimits = DEFAULT_ZOOM_LIMITS,
+	allowance = 0
 ): CameraState {
 	const zoom = clampZoom(camera.zoom, limits);
 	const halfWidth = viewport.width / 2 / zoom;
 	const halfHeight = viewport.height / 2 / zoom;
 
+	const slack = Math.min(Math.max(allowance, 0), 0.9);
+	const slackX = (viewport.width * slack) / zoom;
+	const slackY = (viewport.height * slack) / zoom;
+
 	const x =
 		map.width <= halfWidth * 2
 			? map.width / 2
-			: Math.min(map.width - halfWidth, Math.max(halfWidth, camera.x));
+			: Math.min(map.width - halfWidth + slackX, Math.max(halfWidth - slackX, camera.x));
 	const y =
 		map.height <= halfHeight * 2
 			? map.height / 2
-			: Math.min(map.height - halfHeight, Math.max(halfHeight, camera.y));
+			: Math.min(map.height - halfHeight + slackY, Math.max(halfHeight - slackY, camera.y));
 
 	return { x, y, zoom };
 }

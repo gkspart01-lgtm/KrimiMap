@@ -171,6 +171,141 @@ export function validateCaseDraft(input: unknown): ValidationResult {
 }
 
 /**
+ * Turn a string into a contract-conforming id: lowercase kebab-case, no umlauts.
+ */
+export function toDraftId(raw: string): string {
+	return raw
+		.toLowerCase()
+		.replace(/ä/g, 'ae')
+		.replace(/ö/g, 'oe')
+		.replace(/ü/g, 'ue')
+		.replace(/ß/g, 'ss')
+		.normalize('NFKD')
+		.replace(/[\u0300-\u036f]/g, '')
+		.replace(/[^a-z0-9]+/g, '-')
+		.replace(/^-+|-+$/g, '')
+		.slice(0, 60);
+}
+
+interface RepairResult {
+	value: unknown;
+	changes: string[];
+}
+
+/**
+ * Make a parsed model answer conform to the id rules before validation.
+ *
+ * Small models reliably produce *some* ids, but they use capitals, spaces,
+ * duplicate values or reference an id they never defined. Rejecting such a
+ * draft outright wastes a usable case, so ids are normalised, duplicates are
+ * made unique and dangling references are resolved against character ids and
+ * names. Anything still broken afterwards is left for the validator to report.
+ */
+export function repairDraftIds(input: unknown): RepairResult {
+	const changes: string[] = [];
+	if (!isRecord(input)) return { value: input, changes };
+
+	const value: Record<string, unknown> = { ...input };
+	const used = new Set<string>();
+
+	const uniqueId = (raw: unknown, fallback: string): string => {
+		let candidate = typeof raw === 'string' ? toDraftId(raw) : '';
+		if (!candidate) candidate = toDraftId(fallback);
+		if (!candidate) candidate = 'item';
+		let unique = candidate;
+		let suffix = 2;
+		while (used.has(unique)) unique = `${candidate}-${suffix++}`;
+		used.add(unique);
+		return unique;
+	};
+
+	// Characters first: their ids are the reference targets.
+	const characterIdMap = new Map<string, string>();
+	const characterAliases = new Map<string, string>();
+
+	/**
+	 * Resolve a clue reference against character ids and names. Exact matches
+	 * win; longer substrings are a fallback and must identify exactly one
+	 * character — short fragments like "a" would otherwise match everything.
+	 */
+	const resolveCharacter = (reference: string): string | undefined => {
+		const exact = characterIdMap.get(reference) ?? characterAliases.get(toDraftId(reference));
+		if (exact) return exact;
+
+		const key = toDraftId(reference);
+		if (key.length < 4) return undefined;
+
+		const candidates = new Set<string>();
+		for (const [alias, id] of characterAliases) {
+			if (alias.length < 4) continue;
+			if (alias.includes(key) || key.includes(alias)) candidates.add(id);
+		}
+		return candidates.size === 1 ? [...candidates][0] : undefined;
+	};
+
+	if (Array.isArray(value.characters)) {
+		value.characters = value.characters.map((raw, index) => {
+			if (!isRecord(raw)) return raw;
+			const name = typeof raw.name === 'string' ? raw.name : `charakter-${index + 1}`;
+			const id = uniqueId(raw.id, name);
+			if (typeof raw.id === 'string' && raw.id !== id) {
+				changes.push(`characters[${index}].id "${raw.id}" → "${id}"`);
+			} else if (typeof raw.id !== 'string') {
+				changes.push(`characters[${index}].id missing → "${id}"`);
+			}
+			if (typeof raw.id === 'string' && !characterIdMap.has(raw.id)) {
+				characterIdMap.set(raw.id, id);
+			}
+			// First mapping wins: a duplicate source id must not steal the alias.
+			for (const alias of [
+				toDraftId(typeof raw.id === 'string' ? raw.id : ''),
+				toDraftId(name),
+				id
+			]) {
+				if (alias && !characterAliases.has(alias)) characterAliases.set(alias, id);
+			}
+			return { ...raw, id };
+		});
+	}
+
+	if (Array.isArray(value.clues)) {
+		value.clues = value.clues.map((raw, index) => {
+			if (!isRecord(raw)) return raw;
+			const title = typeof raw.title === 'string' ? raw.title : `hinweis-${index + 1}`;
+			const id = uniqueId(raw.id, title);
+			if (typeof raw.id === 'string' && raw.id !== id) {
+				changes.push(`clues[${index}].id "${raw.id}" → "${id}"`);
+			} else if (typeof raw.id !== 'string') {
+				changes.push(`clues[${index}].id missing → "${id}"`);
+			}
+
+			let related: unknown = raw.relatedCharacterIds;
+			if (Array.isArray(raw.relatedCharacterIds)) {
+				const resolved: string[] = [];
+				for (const reference of raw.relatedCharacterIds) {
+					if (typeof reference !== 'string') continue;
+					const target = resolveCharacter(reference);
+
+					if (!target) {
+						changes.push(`clues[${index}].relatedCharacterIds dropped "${reference}" (unknown)`);
+						continue;
+					}
+					if (target !== reference) {
+						changes.push(`clues[${index}].relatedCharacterIds "${reference}" → "${target}"`);
+					}
+					if (!resolved.includes(target)) resolved.push(target);
+				}
+				related = resolved;
+			}
+
+			return { ...raw, id, relatedCharacterIds: related };
+		});
+	}
+
+	return { value, changes };
+}
+
+/**
  * Pull the first JSON object out of a model response. Models wrap JSON in
  * prose or Markdown fences often enough that fenced output must not be treated
  * as a failure on its own.

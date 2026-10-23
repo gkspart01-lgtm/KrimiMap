@@ -11,7 +11,7 @@
  */
 
 import type { CaseDraft } from '../contracts/case-draft';
-import { extractJsonObject, validateCaseDraft } from '../contracts/case-draft';
+import { extractJsonObject, repairDraftIds, validateCaseDraft } from '../contracts/case-draft';
 
 export interface GpuReport {
 	supported: boolean;
@@ -332,6 +332,8 @@ export interface AttemptResult {
 	metrics: GenerationMetrics;
 	jsonOk: boolean;
 	validation: string;
+	/** Id fixes applied before validation, e.g. `characters[0].id "Eorid" → "eorid"`. */
+	repairs: string[];
 	draft?: CaseDraft;
 }
 
@@ -369,12 +371,16 @@ export async function runCaseDraftAttempts(
 				mode: options.mode,
 				metrics,
 				jsonOk: false,
-				validation: `JSON parse failed: ${extracted.reason}`
+				validation: `JSON parse failed: ${extracted.reason}`,
+				repairs: []
 			});
 			continue;
 		}
 
-		const checked = validateCaseDraft(extracted.value);
+		// Well-formed JSON is not the same as a usable draft: normalise ids and
+		// references first, then judge the result.
+		const repaired = repairDraftIds(extracted.value);
+		const checked = validateCaseDraft(repaired.value);
 		if (checked.ok) {
 			attempts.push({
 				index,
@@ -382,6 +388,7 @@ export async function runCaseDraftAttempts(
 				metrics,
 				jsonOk: true,
 				validation: 'schema-conform',
+				repairs: repaired.changes,
 				draft: checked.draft
 			});
 			return { attempts, draft: checked.draft, ok: true };
@@ -392,7 +399,8 @@ export async function runCaseDraftAttempts(
 			mode: options.mode,
 			metrics,
 			jsonOk: true,
-			validation: checked.issues.map((issue) => `${issue.path} ${issue.message}`).join('; ')
+			validation: checked.issues.map((issue) => `${issue.path} ${issue.message}`).join('; '),
+			repairs: repaired.changes
 		});
 	}
 

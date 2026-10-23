@@ -84,6 +84,19 @@ describe('clampToMap', () => {
 		const clamped = clampToMap({ x: 2000, y: 1500, zoom: 100 }, map, viewport);
 		expect(clamped.zoom).toBe(DEFAULT_ZOOM_LIMITS.maxZoom);
 	});
+
+	it('allows dragging past the map edge by the configured allowance', () => {
+		// 800 px viewport, zoom 1 → 15 % allowance is 120 px of slack.
+		const allowed = clampToMap({ x: 0, y: 0, zoom: 1 }, map, viewport, DEFAULT_ZOOM_LIMITS, 0.15);
+		expect(allowed.x).toBe(280);
+		expect(allowed.y).toBe(210);
+	});
+
+	it('caps the allowance so the map cannot be dragged off screen', () => {
+		const clamped = clampToMap({ x: 0, y: 0, zoom: 1 }, map, viewport, DEFAULT_ZOOM_LIMITS, 5);
+		// Clamped to 0.9 of the viewport → 720 px of slack, so 400 - 720 < 0.
+		expect(clamped.x).toBeLessThan(1);
+	});
 });
 
 describe('fitMap', () => {

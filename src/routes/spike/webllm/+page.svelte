@@ -104,6 +104,7 @@
 						index: attempt.index,
 						jsonOk: attempt.jsonOk,
 						validation: attempt.validation,
+						repairs: attempt.repairs,
 						firstTokenMs: Math.round(attempt.metrics.firstTokenMs),
 						totalMs: Math.round(attempt.metrics.totalMs),
 						promptTokens: attempt.metrics.promptTokens,
@@ -306,6 +307,7 @@
 						<th>Gesamt</th>
 						<th>Tokens</th>
 						<th>Zeichen/s</th>
+						<th>Korrekturen</th>
 						<th>Ergebnis</th>
 					</tr>
 				</thead>
@@ -320,6 +322,7 @@
 									'?'}</td
 							>
 							<td>{attempt.metrics.charsPerSecond.toFixed(1)}</td>
+							<td>{attempt.repairs.length}</td>
 							<td
 								class:ok={attempt.validation === 'schema-conform'}
 								class:bad={attempt.validation !== 'schema-conform'}
@@ -330,6 +333,16 @@
 					{/each}
 				</tbody>
 			</table>
+			{#if lastAttempt && lastAttempt.repairs.length > 0}
+				<details>
+					<summary class="small muted">Id-Korrekturen des letzten Versuchs</summary>
+					<ul class="small">
+						{#each lastAttempt.repairs as repair, index (index)}
+							<li><code>{repair}</code></li>
+						{/each}
+					</ul>
+				</details>
+			{/if}
 			<p class="small muted">
 				JS-Heap: {heapMegabytes() ?? '—'} MB (nur Chrome, kein GPU-Speicher)
 				{#if lastAttempt && lastAttempt.metrics.completionTokens}

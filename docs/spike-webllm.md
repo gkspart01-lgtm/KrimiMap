@@ -47,9 +47,10 @@ For each device:
 
 ## Results
 
-| Date       | Device                                               | Browser           | WebGPU adapter                   | Model                       | Mode   | Load (cold) | First token | Total  | Completion tokens | Chars/s | Schema valid                        |
-| ---------- | ---------------------------------------------------- | ----------------- | -------------------------------- | --------------------------- | ------ | ----------- | ----------- | ------ | ----------------- | ------- | ----------------------------------- |
-| 2026-10-23 | Android 10 phone, 8 CPU threads, 8 GB (browser hint) | Chrome 155 mobile | not exposed (empty adapter info) | SmolLM2-360M-Instruct-q4f16 | `text` | 77.3 s      | 13.8 s      | 24.7 s | 163               | 17.1    | **no** — JSON broke at position 102 |
+| Date       | Device                                               | Browser           | WebGPU adapter                   | Model                       | Mode                     | Load (cold)    | First token | Total  | Completion tokens | Chars/s | Schema valid                                                                  |
+| ---------- | ---------------------------------------------------- | ----------------- | -------------------------------- | --------------------------- | ------------------------ | -------------- | ----------- | ------ | ----------------- | ------- | ----------------------------------------------------------------------------- |
+| 2026-10-23 | Android 10 phone, 8 CPU threads, 8 GB (browser hint) | Chrome 155 mobile | not exposed (empty adapter info) | SmolLM2-360M-Instruct-q4f16 | `text`                   | 77.3 s         | 13.8 s      | 24.7 s | 163               | 17.1    | **no** — JSON broke at position 102                                           |
+| 2026-10-23 | same phone, warm cache                               | Chrome 155 mobile | not exposed                      | SmolLM2-360M-Instruct-q4f16 | `json_schema`, 1 attempt | 1.9 s (cached) | 4.7 s       | 61.7 s | 597               | 40.1    | JSON yes, contract **no** — capitalised/duplicate ids, one dangling reference |
 
 ### Findings from the first run
 
@@ -63,14 +64,38 @@ For each device:
   adapter fields as normal, not as an error.
 - `crossOriginIsolated` is false, as expected on GitHub Pages.
 
-### Follow-ups implemented after the first run
+### Findings from the second run (constrained decoding)
 
-- The harness now offers **constrained decoding** (`response_format`
+- **Constrained decoding fixes JSON syntax.** With `response_format`
+  `json_object` + schema the answer parsed on the first attempt — the failure
+  mode shifted from syntax to semantics.
+- **The model cache works.** A reload plus reload of the model took 1.9 s
+  instead of 77 s, so the download cost is a one-time cost per device, not a
+  per-session one.
+- **Constrained decoding is slow and produces long answers**: 597 completion
+  tokens in 61.7 s (~9.7 tokens/s). For an editor that is still too slow, but it
+  is a real answer, not an aborted one.
+- **What still failed was contract-level, not JSON-level**: ids came back
+  capitalised (`Eorid`), two characters shared an id, and a clue referenced an
+  id that was never defined (`eorid`). Validation reported exactly that —
+  which is the behaviour the plan asks for.
+- Implication for Phase 5: a draft pipeline needs a **repair step** between
+  parse and validate (normalise ids, de-duplicate, resolve references), not just
+  a validator. See the follow-up below.
+
+### Follow-ups implemented after the runs
+
+- The harness offers **constrained decoding** (`response_format`
   `json_object`, optionally with a JSON Schema of the draft contract) and a
   **retry count**, and reports every attempt — so the next measurement answers
   whether structure can be forced rather than merely asked for.
-- The measurement above should be repeated in `json_schema` mode; that is the
-  configuration a real generation flow would use.
+- A **draft repair layer** (`repairDraftIds`) now normalises ids to
+  kebab-case, de-duplicates them and resolves dangling clue references against
+  character ids and names, reporting every fix. Unit-tested against the exact
+  shape the phone run produced.
+- Model size is the remaining unknown: 360M may simply be too small for German
+  case text. Repeating the run with **Llama 3.2 1B** (879 MB) separates "model
+  too small" from "phone too slow".
 
 ## Pass criteria
 
