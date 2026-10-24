@@ -56,6 +56,19 @@ green merges. The PR preview is published to GitHub Pages (`gh-pages` branch)
 so the branch state can be tested in a real browser — WebGPU and PWA features
 need HTTPS, which is why a local file server is not enough.
 
+## Deployment
+
+Two static targets build from the same source; neither runs application logic.
+
+- **GitHub Pages** — the PR preview at `/KrimiMap/`. GitHub Pages serves the
+  repository under a sub-path, so the build needs
+  `PUBLIC_BASE_PATH=/KrimiMap npm run build`; the prerendered pages then use
+  relative asset URLs and `resolve()` covers in-app links.
+- **Vercel** — `vercel.json` pins `npm ci` and `npm run build` with
+  `outputDirectory: "build"` (Vercel would otherwise look for `public/`). The
+  site is served at the domain root, so no base path is set there. Plain
+  `npm run build` is the correct command for any host serving at the root.
+
 ## Architecture boundaries
 
 - `src/lib/domain` and `src/lib/ai/contracts` — framework-free rules, no
