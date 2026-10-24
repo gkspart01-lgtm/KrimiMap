@@ -58,16 +58,20 @@ need HTTPS, which is why a local file server is not enough.
 
 ## Deployment
 
-Two static targets build from the same source; neither runs application logic.
+GitHub Pages serves the PR preview at `/KrimiMap/`. Pages serves the repository
+under a sub-path, so that build needs `PUBLIC_BASE_PATH=/KrimiMap npm run build`;
+the prerendered pages then use relative asset URLs and `resolve()` covers in-app
+links.
 
-- **GitHub Pages** — the PR preview at `/KrimiMap/`. GitHub Pages serves the
-  repository under a sub-path, so the build needs
-  `PUBLIC_BASE_PATH=/KrimiMap npm run build`; the prerendered pages then use
-  relative asset URLs and `resolve()` covers in-app links.
-- **Vercel** — `vercel.json` pins `npm ci` and `npm run build` with
-  `outputDirectory: "build"` (Vercel would otherwise look for `public/`). The
-  site is served at the domain root, so no base path is set there. Plain
-  `npm run build` is the correct command for any host serving at the root.
+Any other host that serves the site at its root only needs plain
+`npm run build` and the `build/` directory as document root — no server code, no
+routing rules (every route is prerendered with a trailing slash).
+
+One limitation of Pages: it cannot set response headers. That rules out
+`Cross-Origin-Opener-Policy` + `Cross-Origin-Embedder-Policy`, which are what
+enable multi-threaded WASM (`crossOriginIsolated`) and could speed up local
+inference considerably. A self-hosted reverse proxy in front of the static files
+would solve that without changing the build.
 
 ## Architecture boundaries
 
