@@ -1,59 +1,29 @@
 # Continuous integration
 
-The intended CI job runs type/format checks, unit tests, the static build and
-the Playwright smoke tests. It is **not active yet**: the branch that introduced
-it was pushed with a GitHub token that has no `workflow` scope, and GitHub
-refuses to create or update files under `.github/workflows/` without that scope.
+`.github/workflows/ci.yml` runs the same gates as `npm run verify` on every push
+and pull request:
 
-## Activating it
+1. `npm ci` — install from the committed lockfile
+2. `npm run lint` — ESLint
+3. `npm run check` — `svelte-check` + Prettier
+4. `npm run test:coverage` — unit tests with coverage thresholds
+5. `npm run build` — static build
+6. `npx playwright install --with-deps chromium` + `npm run test:e2e` — desktop
+   and touch-phone browser tests against the built site
+7. On failure, the Playwright traces from `test-results/` are uploaded as an
+   artifact (`playwright-traces`, 7 days), so a red run can be inspected without
+   reproducing it locally.
 
-Either
+Nothing in CI needs a secret, a network service or a paid API: the AI tests use a
+fake engine, and the browser suite fails if a request leaves the static origin.
 
-- run `gh auth refresh -h github.com -s workflow` (interactive, browser once),
-  then add the file below at `.github/workflows/ci.yml` and push, or
-- paste the same file through the GitHub web UI (Settings → Actions is enabled
-  by default).
-
-## `.github/workflows/ci.yml`
-
-```yaml
-name: CI
-
-on:
-  push:
-    branches: ['**']
-  pull_request:
-
-jobs:
-  build-and-test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - run: npm ci
-      - run: npm run lint
-      - run: npm run check
-      - run: npm run test:coverage
-      - run: npm run build
-
-      - name: Install Playwright browser
-        run: npx playwright install --with-deps chromium
-
-      - name: Browser tests
-        run: npm run test:e2e
-```
-
-Until CI exists, run the same sequence locally before opening a pull request:
+## Local equivalent
 
 ```bash
 npm run verify        # everything, including the browser suite
 npm run verify:fast   # without the browser suite
 ```
 
-`npm run test:e2e` needs a Chromium build; it is skipped on machines that
-cannot install Playwright's browser dependencies.
+On a host where Playwright's browser dependencies cannot be installed (no root),
+`scripts/dev-browser-env.sh` unpacks them into a private prefix; see
+[`testing.md`](testing.md).
