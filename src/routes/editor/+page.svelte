@@ -41,12 +41,14 @@
 </svelte:head>
 
 <div class="workspace">
-	<div class="canvas" bind:this={host}></div>
+	<div class="canvas" bind:this={host} data-testid="map"></div>
 
-	<div class="hud">
+	<div class="hud" aria-hidden="true">
 		<strong>Editor</strong>
-		<span class="muted small">Ziehen = verschieben · Mausrad / Pinch = zoomen</span>
-		<span class="small">Zoom {(zoom * 100).toFixed(0)}% · Mitte {centre.x}/{centre.y}</span>
+		<span class="muted small">Ziehen = verschieben · Mausrad / zwei Finger = zoomen</span>
+		<span class="small" data-testid="zoom-label"
+			>Zoom {(zoom * 100).toFixed(0)}% · Mitte {centre.x}/{centre.y}</span
+		>
 	</div>
 
 	{#if !ready && !error}
@@ -67,16 +69,15 @@
 <style>
 	.workspace {
 		position: fixed;
-		inset: 0;
-		/* Leave room for the site header. */
-		padding-top: 3.1rem;
+		/* Below the site header, so the header stays visible and clickable. */
+		inset: var(--header-height) 0 0 0;
 		background: #0f1218;
 		overflow: hidden;
 	}
 
 	.canvas {
 		position: absolute;
-		inset: 3.1rem 0 0 0;
+		inset: 0;
 		touch-action: none;
 	}
 
@@ -95,11 +96,13 @@
 	}
 
 	.hud {
-		top: 3.6rem;
+		top: 0.6rem;
 		left: 0.75rem;
 		flex-direction: column;
 		align-items: flex-start;
 		max-width: 18rem;
+		/* Informational only: a drag that starts here must still move the map. */
+		pointer-events: none;
 	}
 
 	.toolbar {
@@ -109,7 +112,7 @@
 
 	.overlay {
 		position: absolute;
-		inset: 3.1rem 0 0 0;
+		inset: 0;
 		display: grid;
 		place-items: center;
 		z-index: 3;

@@ -1,19 +1,11 @@
 import Phaser from 'phaser';
-import {
-	clampToMap,
-	fitMap,
-	panBy,
-	zoomAround,
-	type CameraState,
-	type Point,
-	type Size,
-	type ZoomLimits
-} from './camera';
+import { MapController } from './map-controller';
+import type { CameraState, Point, Size, ZoomLimits } from './camera';
 
 /** Placeholder map size in world pixels; replaced by case data in Phase 2. */
 export const MAP_SIZE: Size = { width: 2400, height: 1600 };
 
-const ZOOM_LIMITS: ZoomLimits = { minZoom: 0.15, maxZoom: 4 };
+export const ZOOM_LIMITS: ZoomLimits = { minZoom: 0.15, maxZoom: 4 };
 
 /** Rendering above 3× device resolution only costs fill rate. */
 const MAX_PIXEL_RATIO = 3;
@@ -39,33 +31,35 @@ interface Options {
 	onCamera?: (camera: CameraState) => void;
 }
 
-interface TrackedPointer {
-	x: number;
-	y: number;
-	previousX: number;
-	previousY: number;
+function currentPixelRatio(): number {
+	return Math.min(window.devicePixelRatio || 1, MAX_PIXEL_RATIO);
 }
 
 /**
- * Boots the map workspace: a Phaser canvas with pan (drag), zoom (wheel and
- * pinch) and a placeholder map so the interaction can be verified before the
- * real case rendering exists.
+ * Boots the map workspace: a Phaser canvas plus the gesture handling in
+ * `MapController`.
  *
- * The canvas backing store is sized in *device* pixels so text and lines stay
- * sharp on phones and high-DPI screens, while all camera maths — and every
- * pointer coordinate used for it — stays in CSS pixels.
+ * This function is deliberately thin — it converts pointer events into
+ * CSS-pixel samples, applies the resulting camera to the Phaser camera and keeps
+ * the canvas at device resolution. Every interaction rule lives in the
+ * controller so it can be unit tested without a browser.
  *
- * This module touches `window`/WebGL, so it may only be imported in the
- * browser (dynamic import from `onMount`).
+ * The canvas backing store is sized in device pixels so text and lines stay
+ * sharp on phones and high-DPI screens, while all camera maths stays in CSS
+ * pixels.
+ *
+ * This module touches `window`/WebGL, so it may only be imported in the browser
+ * (dynamic import from `onMount`).
  */
 export function createEditorGame(parent: HTMLElement, options: Options = {}): EditorGameHandle {
-	const pixelRatio = Math.min(window.devicePixelRatio || 1, MAX_PIXEL_RATIO);
+	let pixelRatio = currentPixelRatio();
 	/** Text is rasterised once, so oversample it to survive the zoom range. */
-	const textResolution = Math.min(pixelRatio * 2, 4);
+	let textResolution = Math.min(pixelRatio * 2, 4);
 
-	let camera: CameraState | null = null;
-	let game: Phaser.Game;
+	let controller: MapController | null = null;
 	let resizeObserver: ResizeObserver | null = null;
+	let dprQuery: MediaQueryList | null = null;
+	const globalListeners: Array<[EventTarget, string, EventListener]> = [];
 
 	/** CSS pixels — the coordinate system of the camera maths. */
 	const viewport = (): Size => ({
@@ -74,37 +68,47 @@ export function createEditorGame(parent: HTMLElement, options: Options = {}): Ed
 	});
 
 	/**
-	 * Phaser reports pointer coordinates in canvas pixels (canvas size × device
-	 * ratio), while all camera maths happens in CSS pixels. Normalising through
-	 * the actual canvas size keeps drags exactly under the finger even if the
+	 * Phaser reports pointer coordinates in canvas pixels (CSS size × device
+	 * ratio), while the camera maths happens in CSS pixels. Normalising through
+	 * the actual canvas size keeps a drag exactly under the finger even if the
 	 * canvas ends up displayed at a different size than requested.
 	 */
 	const toCss = (point: Point): Point => {
-		const scale = game?.scale;
-		const width = scale?.width ?? 0;
-		const height = scale?.height ?? 0;
+		const width = game?.scale?.width ?? 0;
+		const height = game?.scale?.height ?? 0;
 		const view = viewport();
 		if (!width || !height) return point;
 		return { x: (point.x / width) * view.width, y: (point.y / height) * view.height };
 	};
 
-	const emit = () => {
-		if (camera) options.onCamera?.(camera);
-	};
-
-	const apply = () => {
-		if (!camera) return;
-		const scene = game.scene.getScene('map');
-		const cam = scene?.cameras?.main;
+	const applyToScene = (camera: CameraState) => {
+		const cam = game?.scene?.getScene('map')?.cameras?.main;
 		if (!cam) return;
 		cam.setZoom(camera.zoom);
 		cam.centerOn(camera.x, camera.y);
-		emit();
 	};
 
-	const setCamera = (next: CameraState) => {
-		camera = clampToMap(next, MAP_SIZE, viewport(), ZOOM_LIMITS, PAN_ALLOWANCE);
-		apply();
+	/** Mirror the camera into the DOM: readable for debugging and for tests. */
+	const publish = (camera: CameraState) => {
+		parent.dataset.zoom = camera.zoom.toFixed(4);
+		parent.dataset.cameraX = camera.x.toFixed(2);
+		parent.dataset.cameraY = camera.y.toFixed(2);
+		options.onCamera?.(camera);
+	};
+
+	const ensureController = (): MapController => {
+		if (controller) return controller;
+		controller = new MapController({
+			map: MAP_SIZE,
+			limits: ZOOM_LIMITS,
+			allowance: PAN_ALLOWANCE,
+			viewport: viewport(),
+			onChange: (camera) => {
+				applyToScene(camera);
+				publish(camera);
+			}
+		});
+		return controller;
 	};
 
 	/** Keep the canvas backing store at device resolution and its CSS size exact. */
@@ -117,30 +121,58 @@ export function createEditorGame(parent: HTMLElement, options: Options = {}): Ed
 		}
 		const canvas = game.canvas;
 		if (canvas) {
-			// Explicit pixel sizes instead of 100%: Phaser derives the pointer
-			// transform from the canvas browser size, so it must be unambiguous.
+			// Explicit pixel sizes instead of 100%: Phaser derives its pointer
+			// transform from the canvas' browser size, so it must be unambiguous.
 			canvas.style.width = `${css.width}px`;
 			canvas.style.height = `${css.height}px`;
 			canvas.style.display = 'block';
 			// Touch gestures must reach the game, not the page scroll.
 			canvas.style.touchAction = 'none';
+			// Long-press on a canvas otherwise opens the browser context menu.
+			canvas.addEventListener('contextmenu', (event) => event.preventDefault());
 		}
 	};
 
-	class MapScene extends Phaser.Scene {
-		private pointers = new Map<number, TrackedPointer>();
-		private pinchDistance = 0;
-		private pinchCentre: Point = { x: 0, y: 0 };
+	/** Re-read the pixel ratio: browser zoom and moving between screens change it. */
+	const watchPixelRatio = () => {
+		if (typeof window.matchMedia !== 'function') return;
+		dprQuery?.removeEventListener('change', onDprChange);
+		dprQuery = window.matchMedia(`(resolution: ${pixelRatio}dppx)`);
+		dprQuery.addEventListener('change', onDprChange);
+	};
 
+	const onDprChange = () => {
+		pixelRatio = currentPixelRatio();
+		textResolution = Math.min(pixelRatio * 2, 4);
+		syncCanvasSize();
+		watchPixelRatio();
+	};
+
+	const onResize = () => {
+		syncCanvasSize();
+		const active = ensureController();
+		active.setViewport(viewport());
+		// The scene camera must be re-applied even when the camera state itself
+		// did not change, because the canvas was resized underneath it.
+		applyToScene(active.camera);
+	};
+
+	const addGlobalListener = (target: EventTarget, type: string, handler: EventListener) => {
+		target.addEventListener(type, handler);
+		globalListeners.push([target, type, handler]);
+	};
+
+	class MapScene extends Phaser.Scene {
 		constructor() {
 			super('map');
 		}
 
 		create() {
-			camera = fitMap(MAP_SIZE, viewport(), ZOOM_LIMITS);
+			const active = ensureController();
 			this.drawPlaceholderMap();
 			this.bindInput();
-			apply();
+			applyToScene(active.camera);
+			publish(active.camera);
 		}
 
 		private drawPlaceholderMap() {
@@ -199,112 +231,35 @@ export function createEditorGame(parent: HTMLElement, options: Options = {}): Ed
 		}
 
 		private bindInput() {
+			const active = ensureController();
+
 			this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
 				const point = toCss({ x: pointer.x, y: pointer.y });
-				this.pointers.set(pointer.id, {
-					x: point.x,
-					y: point.y,
-					previousX: point.x,
-					previousY: point.y
-				});
-				this.resetPinch();
+				active.pointerDown({ id: pointer.id, x: point.x, y: point.y });
 			});
 
-			const release = (pointer: Phaser.Input.Pointer) => {
-				this.pointers.delete(pointer.id);
-				this.resetPinch();
-			};
+			this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
+				const point = toCss({ x: pointer.x, y: pointer.y });
+				active.pointerMove({ id: pointer.id, x: point.x, y: point.y });
+			});
+
+			// A release outside the canvas belongs to a specific pointer, so it must
+			// not clear the other fingers of a running pinch.
+			const release = (pointer: Phaser.Input.Pointer) => active.pointerUp(pointer.id);
 			this.input.on('pointerup', release);
-			this.input.on('pointerout', release);
-
-			this.input.on(
-				'pointermove',
-				(pointer: Phaser.Input.Pointer) => {
-					if (!camera) return;
-					const tracked = this.pointers.get(pointer.id);
-					if (!tracked) return;
-
-					const point = toCss({ x: pointer.x, y: pointer.y });
-					tracked.previousX = tracked.x;
-					tracked.previousY = tracked.y;
-					tracked.x = point.x;
-					tracked.y = point.y;
-
-					const active = [...this.pointers.values()].slice(0, 2);
-
-					// Two fingers: pinch around the midpoint and pan with it.
-					if (active.length === 2) {
-						const distance = Math.hypot(active[0].x - active[1].x, active[0].y - active[1].y);
-						const centre = {
-							x: (active[0].x + active[1].x) / 2,
-							y: (active[0].y + active[1].y) / 2
-						};
-
-						if (this.pinchDistance > 0 && distance > 0) {
-							const factor = distance / this.pinchDistance;
-							let next = zoomAround(camera, centre, factor, viewport(), ZOOM_LIMITS);
-							const drift = {
-								x: centre.x - this.pinchCentre.x,
-								y: centre.y - this.pinchCentre.y
-							};
-							if (drift.x !== 0 || drift.y !== 0) next = panBy(next, drift);
-							setCamera(next);
-						}
-
-						this.pinchDistance = distance;
-						this.pinchCentre = centre;
-						return;
-					}
-
-					// One finger or mouse: drag to pan.
-					const delta = {
-						x: tracked.x - tracked.previousX,
-						y: tracked.y - tracked.previousY
-					};
-					if (delta.x !== 0 || delta.y !== 0) setCamera(panBy(camera, delta));
-				},
-				this
-			);
+			this.input.on('pointerupoutside', release);
 
 			this.input.on(
 				'wheel',
 				(pointer: Phaser.Input.Pointer, _over: unknown, _dx: number, dy: number) => {
-					if (!camera) return;
-					const factor = dy > 0 ? 1 / 1.12 : 1.12;
-					setCamera(
-						zoomAround(
-							camera,
-							toCss({ x: pointer.x, y: pointer.y }),
-							factor,
-							viewport(),
-							ZOOM_LIMITS
-						)
-					);
+					active.wheel(toCss({ x: pointer.x, y: pointer.y }), dy);
 				}
 			);
-
-			this.scale.on('resize', () => {
-				if (camera) setCamera(camera);
-			});
-		}
-
-		/** Restart pinch measurement whenever the finger count changes. */
-		private resetPinch() {
-			const active = [...this.pointers.values()].slice(0, 2);
-			if (active.length === 2) {
-				this.pinchDistance = Math.hypot(active[0].x - active[1].x, active[0].y - active[1].y);
-				this.pinchCentre = {
-					x: (active[0].x + active[1].x) / 2,
-					y: (active[0].y + active[1].y) / 2
-				};
-			} else {
-				this.pinchDistance = 0;
-			}
 		}
 	}
 
 	const css = viewport();
-	game = new Phaser.Game({
+	const game: Phaser.Game = new Phaser.Game({
 		type: Phaser.AUTO,
 		parent,
 		backgroundColor: '#0f1218',
@@ -324,37 +279,44 @@ export function createEditorGame(parent: HTMLElement, options: Options = {}): Ed
 	});
 
 	syncCanvasSize();
+	watchPixelRatio();
+
+	// Losing focus or a cancelled touch can drop pointer-up events entirely, which
+	// would leave the controller holding a phantom finger.
+	addGlobalListener(window, 'pointercancel', () => controller?.releaseAll());
+	addGlobalListener(window, 'blur', () => controller?.releaseAll());
+	addGlobalListener(document, 'visibilitychange', () => {
+		if (document.hidden) controller?.releaseAll();
+	});
 
 	if (typeof ResizeObserver !== 'undefined') {
-		resizeObserver = new ResizeObserver(() => {
-			syncCanvasSize();
-			if (camera) setCamera(camera);
-			else apply();
-		});
+		resizeObserver = new ResizeObserver(onResize);
 		resizeObserver.observe(parent);
 	}
 
 	return {
 		fit() {
-			camera = fitMap(MAP_SIZE, viewport(), ZOOM_LIMITS);
-			apply();
+			ensureController().fit();
 		},
 		zoomIn() {
-			if (!camera) return;
-			const v = viewport();
-			setCamera(zoomAround(camera, { x: v.width / 2, y: v.height / 2 }, 1.25, v, ZOOM_LIMITS));
+			ensureController().zoomBy(1.25);
 		},
 		zoomOut() {
-			if (!camera) return;
-			const v = viewport();
-			setCamera(zoomAround(camera, { x: v.width / 2, y: v.height / 2 }, 1 / 1.25, v, ZOOM_LIMITS));
+			ensureController().zoomBy(1 / 1.25);
 		},
 		camera() {
-			return camera ?? { x: 0, y: 0, zoom: 1 };
+			return controller?.camera ?? { x: 0, y: 0, zoom: 1 };
 		},
 		destroy() {
 			resizeObserver?.disconnect();
 			resizeObserver = null;
+			dprQuery?.removeEventListener('change', onDprChange);
+			dprQuery = null;
+			for (const [target, type, handler] of globalListeners) {
+				target.removeEventListener(type, handler);
+			}
+			globalListeners.length = 0;
+			controller = null;
 			game.destroy(true);
 		}
 	};
