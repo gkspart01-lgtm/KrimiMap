@@ -24,6 +24,26 @@ export default defineConfig({
 	],
 	test: {
 		include: ['tests/unit/**/*.test.ts'],
-		environment: 'node'
+		environment: 'node',
+		coverage: {
+			provider: 'v8',
+			reporter: ['text', 'html'],
+			/**
+			 * Only the framework-free modules are measured here. Browser adapters
+			 * (`createEditorGame`, the WebLLM runtime) cannot run in Node and are
+			 * covered by the Playwright suite instead.
+			 */
+			include: [
+				'src/lib/game/camera.ts',
+				'src/lib/game/map-controller.ts',
+				'src/lib/ai/contracts/case-draft.ts'
+			],
+			thresholds: {
+				lines: 95,
+				statements: 95,
+				functions: 95,
+				branches: 85
+			}
+		}
 	}
 });

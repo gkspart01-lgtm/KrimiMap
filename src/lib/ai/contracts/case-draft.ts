@@ -208,9 +208,12 @@ export function repairDraftIds(input: unknown): RepairResult {
 	const value: Record<string, unknown> = { ...input };
 	const used = new Set<string>();
 
-	const uniqueId = (raw: unknown, fallback: string): string => {
+	const uniqueId = (raw: unknown, fallback: string, lastResort: string): string => {
 		let candidate = typeof raw === 'string' ? toDraftId(raw) : '';
 		if (!candidate) candidate = toDraftId(fallback);
+		// A name that slugifies to nothing (emoji, punctuation) still needs a
+		// readable, stable id.
+		if (!candidate) candidate = toDraftId(lastResort);
 		if (!candidate) candidate = 'item';
 		let unique = candidate;
 		let suffix = 2;
@@ -247,7 +250,7 @@ export function repairDraftIds(input: unknown): RepairResult {
 		value.characters = value.characters.map((raw, index) => {
 			if (!isRecord(raw)) return raw;
 			const name = typeof raw.name === 'string' ? raw.name : `charakter-${index + 1}`;
-			const id = uniqueId(raw.id, name);
+			const id = uniqueId(raw.id, name, `charakter-${index + 1}`);
 			if (typeof raw.id === 'string' && raw.id !== id) {
 				changes.push(`characters[${index}].id "${raw.id}" → "${id}"`);
 			} else if (typeof raw.id !== 'string') {
@@ -272,7 +275,7 @@ export function repairDraftIds(input: unknown): RepairResult {
 		value.clues = value.clues.map((raw, index) => {
 			if (!isRecord(raw)) return raw;
 			const title = typeof raw.title === 'string' ? raw.title : `hinweis-${index + 1}`;
-			const id = uniqueId(raw.id, title);
+			const id = uniqueId(raw.id, title, `hinweis-${index + 1}`);
 			if (typeof raw.id === 'string' && raw.id !== id) {
 				changes.push(`clues[${index}].id "${raw.id}" → "${id}"`);
 			} else if (typeof raw.id !== 'string') {

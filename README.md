@@ -26,8 +26,11 @@ Implemented:
 - WebLLM feasibility harness at `/spike/webllm` — see
   [`docs/spike-webllm.md`](docs/spike-webllm.md). Measurements pending on real
   devices.
-- Unit tests (Vitest), a Playwright smoke test, type checks and formatting
-  checks.
+- Interaction logic in a framework-free `MapController` (drag, pinch, zoom,
+  clamping) with unit tests, plus a Playwright suite that drives a real Chromium
+  with mouse _and_ emulated two-finger touch.
+- `npm run verify` as the single gate: lint, types, formatting, unit tests with
+  coverage thresholds, static build, browser tests.
 
 Not implemented yet (next phases): IndexedDB persistence, case import/export,
 editor tools (entities, layers, timeline, undo/redo), playtest mode, PWA
@@ -40,11 +43,18 @@ npm ci                 # install from the lockfile
 npm run dev            # dev server
 npm run build          # static production build into build/
 npm run preview        # serve the production build
+npm run lint           # ESLint
 npm run check          # svelte-kit sync + svelte-check + prettier check
 npm test               # unit tests (Vitest)
-npm run test:e2e       # Playwright smoke tests against the built app
+npm run test:coverage  # unit tests with coverage thresholds
+npm run test:e2e       # Playwright: desktop + touch phone against the build
+npm run verify:fast    # lint → check → unit+coverage → build
+npm run verify         # verify:fast plus the browser suite
 npm run format         # write formatting
 ```
+
+The pipeline, what each gate proves and how to run the browser suite on a host
+without root: [`docs/testing.md`](docs/testing.md).
 
 Set `PUBLIC_BASE_PATH` when the site is served from a sub-path, e.g.
 `PUBLIC_BASE_PATH=/KrimiMap npm run build`.

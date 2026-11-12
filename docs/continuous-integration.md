@@ -36,21 +36,23 @@ jobs:
           cache: npm
 
       - run: npm ci
+      - run: npm run lint
       - run: npm run check
-      - run: npm test
+      - run: npm run test:coverage
       - run: npm run build
 
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
 
-      - name: End-to-end smoke tests
+      - name: Browser tests
         run: npm run test:e2e
 ```
 
 Until CI exists, run the same sequence locally before opening a pull request:
 
 ```bash
-npm ci && npm run check && npm test && npm run build
+npm run verify        # everything, including the browser suite
+npm run verify:fast   # without the browser suite
 ```
 
 `npm run test:e2e` needs a Chromium build; it is skipped on machines that
