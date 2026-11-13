@@ -122,7 +122,7 @@ test('a drag that starts on the info panel still moves the map', async ({ page }
 	await waitForMap(page);
 	await zoomInUntilPannable(page);
 
-	const hud = page.getByText('Ziehen = verschieben · Mausrad / zwei Finger = zoomen');
+	const hud = page.getByTestId('map-hud');
 	const hudBox = await hud.boundingBox();
 	if (!hudBox) throw new Error('hud not visible');
 

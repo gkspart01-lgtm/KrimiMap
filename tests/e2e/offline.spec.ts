@@ -40,7 +40,7 @@ test('the app reloads and opens the editor with the network disabled', async ({
 
 	// Client-side navigation into the heaviest route: Phaser must load from cache.
 	await page.getByRole('link', { name: 'Editor' }).click();
-	await expect(page).toHaveURL(/\/editor\/$/);
+	await expect(page).toHaveURL(/\/editor\/\?id=/);
 	const camera = await waitForMap(page);
 	expect(camera.zoom).toBeGreaterThan(0);
 

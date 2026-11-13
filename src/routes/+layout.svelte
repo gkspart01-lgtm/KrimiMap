@@ -7,12 +7,14 @@
 	import PwaNotice from '#lib/components/PwaNotice.svelte';
 	import { startPwa } from '#lib/pwa/state.svelte';
 	import { debug, initDebug, toggleDebug } from '#lib/ui/debug.svelte';
+	import { currentLocale, initLocale, setLocale, t } from '#lib/i18n/index.svelte';
 
 	let { children }: { children: Snippet } = $props();
 
 	// Service worker, connection events and the install prompt only exist in the
 	// browser; prerendering never reaches this.
 	onMount(() => {
+		initLocale();
 		initDebug();
 		startPwa();
 	});
@@ -21,18 +23,27 @@
 <header class="topbar">
 	<a class="brand" href={resolve('/')}>KrimiMap</a>
 	<nav>
-		<a href={resolve('editor/')}>Editor</a>
+		<a href={resolve('cases/')}>{t('nav.cases')}</a>
+		<a href={resolve('editor/')}>{t('nav.editor')}</a>
 		{#if debug()}
 			<a href={resolve('spike/webllm/')}>AI-Spike</a>
 		{/if}
 		<ConnectionPill />
 		<button
 			type="button"
+			class="lang-toggle"
+			aria-label={t('nav.language')}
+			title={t('nav.language')}
+			onclick={() => setLocale(currentLocale() === 'de' ? 'en' : 'de')}
+			>{currentLocale() === 'de' ? 'EN' : 'DE'}</button
+		>
+		<button
+			type="button"
 			class="debug-toggle"
 			class:active={debug()}
 			aria-pressed={debug()}
-			aria-label="Debug-Ansicht umschalten"
-			title="Debug-Ansicht: technische Details ein-/ausblenden"
+			aria-label={t('nav.debug.label')}
+			title={t('nav.debug.title')}
 			onclick={toggleDebug}
 		>
 			⚙
@@ -83,8 +94,10 @@
 		color: var(--text);
 	}
 
+	.lang-toggle,
 	.debug-toggle {
 		display: grid;
+		place-items: center;
 		place-items: center;
 		width: 1.9rem;
 		height: 1.9rem;
@@ -98,6 +111,15 @@
 		cursor: pointer;
 	}
 
+	.lang-toggle {
+		width: auto;
+		padding: 0 0.45rem;
+		border-radius: 999px;
+		font-size: 0.7rem;
+		letter-spacing: 0.04em;
+	}
+
+	.lang-toggle:hover,
 	.debug-toggle:hover {
 		color: var(--text);
 	}

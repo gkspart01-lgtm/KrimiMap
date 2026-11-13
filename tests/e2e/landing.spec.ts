@@ -32,7 +32,7 @@ test('landing page opens the editor and keeps technical details behind debug', a
 test('navigation reaches the editor and back', async ({ page }) => {
 	await page.goto('/');
 	await page.getByRole('button', { name: 'Karte öffnen' }).click();
-	await expect(page).toHaveURL(/\/editor\/$/);
+	await expect(page).toHaveURL(/\/editor\/\?id=/);
 	await expect(page.locator('canvas')).toBeVisible();
 
 	await page.getByRole('link', { name: 'KrimiMap' }).click();

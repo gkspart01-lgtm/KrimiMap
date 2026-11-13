@@ -1,9 +1,7 @@
 import Phaser from 'phaser';
+import type { CaseDocument, CaseEntity } from '#lib/domain/case-document';
 import { MapController } from './map-controller';
 import type { CameraState, Point, Size, ZoomLimits } from './camera';
-
-/** Placeholder map size in world pixels; replaced by case data in Phase 2. */
-export const MAP_SIZE: Size = { width: 2400, height: 1600 };
 
 export const ZOOM_LIMITS: ZoomLimits = { minZoom: 0.15, maxZoom: 4 };
 
@@ -17,18 +15,29 @@ const MAX_PIXEL_RATIO = 3;
  */
 const PAN_ALLOWANCE = 0.15;
 
+/** Hit radius for selecting/dragging an entity, in world pixels. */
+const HIT_RADIUS = 40;
+
 export interface EditorGameHandle {
-	/** Frame the whole map. */
 	fit(): void;
 	zoomIn(): void;
 	zoomOut(): void;
 	camera(): CameraState;
+	/** Replace the rendered document (case switch, undo, external edit). */
+	setDocument(document: CaseDocument): void;
+	/** Highlight one entity, or clear the highlight. */
+	setSelected(id: string | null): void;
 	destroy(): void;
 }
 
 interface Options {
+	document?: CaseDocument;
 	/** Called whenever the camera changes so the UI can mirror it. */
 	onCamera?: (camera: CameraState) => void;
+	/** Called with the entity under the pointer, or `null` for empty map. */
+	onSelect?: (id: string | null) => void;
+	/** Called once when a drag ends — deliberately not on every frame. */
+	onEntityMove?: (id: string, position: Point) => void;
 }
 
 function currentPixelRatio(): number {
@@ -36,17 +45,13 @@ function currentPixelRatio(): number {
 }
 
 /**
- * Boots the map workspace: a Phaser canvas plus the gesture handling in
- * `MapController`.
+ * Boots the map workspace: a Phaser canvas, the gesture handling in
+ * `MapController`, and rendering/dragging of one case document's entities.
  *
- * This function is deliberately thin — it converts pointer events into
- * CSS-pixel samples, applies the resulting camera to the Phaser camera and keeps
- * the canvas at device resolution. Every interaction rule lives in the
- * controller so it can be unit tested without a browser.
- *
- * The canvas backing store is sized in device pixels so text and lines stay
- * sharp on phones and high-DPI screens, while all camera maths stays in CSS
- * pixels.
+ * This function is deliberately thin — it converts pointer events into CSS-pixel
+ * samples, applies the resulting camera to the Phaser camera, keeps the canvas at
+ * device resolution and reports what the user grabbed. Every interaction rule
+ * lives in the controller so it can be unit tested without a browser.
  *
  * This module touches `window`/WebGL, so it may only be imported in the browser
  * (dynamic import from `onMount`).
@@ -56,15 +61,25 @@ export function createEditorGame(parent: HTMLElement, options: Options = {}): Ed
 	/** Text is rasterised once, so oversample it to survive the zoom range. */
 	let textResolution = Math.min(pixelRatio * 2, 4);
 
+	let caseDocument: CaseDocument | null = options.document ?? null;
 	let controller: MapController | null = null;
 	let resizeObserver: ResizeObserver | null = null;
 	let dprQuery: MediaQueryList | null = null;
+	let scene: MapScene | null = null;
+	const registerScene = (instance: MapScene) => {
+		scene = instance;
+	};
 	const globalListeners: Array<[EventTarget, string, EventListener]> = [];
 
 	/** CSS pixels — the coordinate system of the camera maths. */
 	const viewport = (): Size => ({
 		width: Math.max(1, parent.clientWidth),
 		height: Math.max(1, parent.clientHeight)
+	});
+
+	const mapSize = (): Size => ({
+		width: caseDocument?.map.width ?? 2400,
+		height: caseDocument?.map.height ?? 1600
 	});
 
 	/**
@@ -99,7 +114,7 @@ export function createEditorGame(parent: HTMLElement, options: Options = {}): Ed
 	const ensureController = (): MapController => {
 		if (controller) return controller;
 		controller = new MapController({
-			map: MAP_SIZE,
+			map: mapSize(),
 			limits: ZOOM_LIMITS,
 			allowance: PAN_ALLOWANCE,
 			viewport: viewport(),
@@ -155,6 +170,7 @@ export function createEditorGame(parent: HTMLElement, options: Options = {}): Ed
 		// The scene camera must be re-applied even when the camera state itself
 		// did not change, because the canvas was resized underneath it.
 		applyToScene(active.camera);
+		scene?.layoutOverlay();
 	};
 
 	const addGlobalListener = (target: EventTarget, type: string, handler: EventListener) => {
@@ -162,47 +178,121 @@ export function createEditorGame(parent: HTMLElement, options: Options = {}): Ed
 		globalListeners.push([target, type, handler]);
 	};
 
+	/** Screen (CSS) point → world point, using the camera the controller owns. */
+	const toWorld = (css: Point): Point => {
+		const camera = ensureController().camera;
+		const view = viewport();
+		return {
+			x: camera.x + (css.x - view.width / 2) / camera.zoom,
+			y: camera.y + (css.y - view.height / 2) / camera.zoom
+		};
+	};
+
 	class MapScene extends Phaser.Scene {
+		private backdrop: Phaser.GameObjects.Image | null = null;
+		private vignette: Phaser.GameObjects.Image | null = null;
+		private gridLayer: Phaser.GameObjects.Graphics | null = null;
+		private frameLayer: Phaser.GameObjects.Graphics | null = null;
+		private edgeLabels: Phaser.GameObjects.Text[] = [];
+		private entityLayer!: Phaser.GameObjects.Container;
+		private selectionLayer!: Phaser.GameObjects.Graphics;
+		private entityObjects = new Map<string, Phaser.GameObjects.Container>();
+		private dragging: { id: string; offset: Point } | null = null;
+		private drawnMap: { width: number; height: number } | null = null;
+		private selectedId: string | null = null;
+
 		constructor() {
 			super('map');
 		}
 
 		create() {
+			this.entityLayer = this.add.container(0, 0).setDepth(3);
+			this.selectionLayer = this.add.graphics().setDepth(4);
+
 			const active = ensureController();
-			this.drawMap();
+			this.buildBase();
+			this.buildEntities();
 			this.bindInput();
 			applyToScene(active.camera);
 			publish(active.camera);
+			registerScene(this);
+		}
+
+		/** Called by the handle when the document changes. */
+		refresh() {
+			if (!this.sys.isActive()) return;
+			const size = mapSize();
+			if (
+				!this.drawnMap ||
+				this.drawnMap.width !== size.width ||
+				this.drawnMap.height !== size.height
+			) {
+				this.buildBase();
+			}
+			this.buildEntities();
+		}
+
+		setSelection(id: string | null) {
+			this.selectedId = id;
+			this.drawSelection();
+		}
+
+		/** The vignette belongs to the screen, not the map: it must not zoom away. */
+		layoutOverlay() {
+			const cam = this.cameras.main;
+			const view = viewport();
+			this.vignette?.setPosition(cam.midPoint.x, cam.midPoint.y);
+			this.vignette?.setDisplaySize(view.width / cam.zoom, view.height / cam.zoom);
+			this.drawSelection();
+		}
+
+		private buildBase() {
+			const { width, height } = mapSize();
+			const backdropKey = `map-backdrop-${width}x${height}`;
+			if (!this.textures.exists(backdropKey)) this.paintBackdrop(backdropKey);
+			if (!this.textures.exists('map-vignette')) this.paintVignette('map-vignette');
+
+			this.backdrop?.destroy();
+			this.backdrop = this.add
+				.image(0, 0, backdropKey)
+				.setOrigin(0, 0)
+				.setDisplaySize(width, height)
+				.setDepth(-30);
+
+			this.gridLayer?.destroy();
+			this.gridLayer = this.add.graphics().setDepth(-20);
+			this.paintGrid(this.gridLayer, width, height);
+
+			this.edgeLabels.forEach((label) => label.destroy());
+			this.edgeLabels = this.paintEdgeLabels(width, height);
+
+			this.frameLayer?.destroy();
+			this.frameLayer = this.add.graphics().setDepth(-17);
+			this.paintFrame(this.frameLayer, width, height);
+
+			this.vignette?.destroy();
+			this.vignette = this.add
+				.image(0, 0, 'map-vignette')
+				.setOrigin(0.5, 0.5)
+				.setDepth(40)
+				.setAlpha(0.85);
+
+			this.drawnMap = { width, height };
+			this.layoutOverlay();
 		}
 
 		/**
-		 * The placeholder map, drawn to look like a cartographer's board rather than
-		 * a debug grid: gradient backdrop, two-level grid, frame with corner ticks,
-		 * edge coordinates, and entity markers with soft glow and readable labels.
-		 *
-		 * Everything is generated at boot, so there are no image assets to ship or
-		 * license. Case data replaces the entity list in Phase 2.
+		 * Gradient backdrop plus a faint light pool, as one small stretchable
+		 * texture: gradients do not need map-sized texels, and large textures make
+		 * every frame expensive on software rendering.
 		 */
-		private drawMap() {
-			this.drawBackdrop();
-			this.drawGrid();
-			this.drawFrame();
-			this.drawEntities();
-			this.drawVignette();
-		}
-
-		/**
-		 * Gradient backdrop plus a faint light pool, as one stretchable texture.
-		 * Deliberately small: gradients do not need map-sized texels, and large
-		 * textures make every frame expensive on software rendering.
-		 */
-		private drawBackdrop() {
+		private paintBackdrop(key: string) {
 			const width = 480;
 			const height = 320;
-			const texture = this.textures.createCanvas('map-backdrop', width, height);
+			const texture = this.textures.createCanvas(key, width, height);
 			if (!texture) return;
-
 			const ctx = texture.getContext();
+
 			const vertical = ctx.createLinearGradient(0, 0, 0, height);
 			vertical.addColorStop(0, '#141d29');
 			vertical.addColorStop(0.55, '#19232f');
@@ -222,131 +312,14 @@ export function createEditorGame(parent: HTMLElement, options: Options = {}): Ed
 			pool.addColorStop(1, 'rgba(122, 162, 247, 0)');
 			ctx.fillStyle = pool;
 			ctx.fillRect(0, 0, width, height);
-
 			texture.refresh();
-			this.add
-				.image(0, 0, 'map-backdrop')
-				.setOrigin(0, 0)
-				.setDisplaySize(MAP_SIZE.width, MAP_SIZE.height)
-				.setDepth(-30);
 		}
 
-		/** Two grid levels plus letters on top and numbers on the left edge. */
-		private drawGrid() {
-			const fine = this.add.graphics().setDepth(-20);
-			fine.lineStyle(1, 0x8fa3bd, 0.05);
-			for (let x = 100; x < MAP_SIZE.width; x += 100) {
-				fine.lineBetween(x, 0, x, MAP_SIZE.height);
-			}
-			for (let y = 100; y < MAP_SIZE.height; y += 100) {
-				fine.lineBetween(0, y, MAP_SIZE.width, y);
-			}
-
-			const coarse = this.add.graphics().setDepth(-19);
-			coarse.lineStyle(1, 0xa8bdd6, 0.11);
-			for (let x = 500; x < MAP_SIZE.width; x += 500) {
-				coarse.lineBetween(x, 0, x, MAP_SIZE.height);
-			}
-			for (let y = 500; y < MAP_SIZE.height; y += 500) {
-				coarse.lineBetween(0, y, MAP_SIZE.width, y);
-			}
-
-			const labelStyle = {
-				fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-				fontSize: '22px',
-				color: '#8798ad'
-			};
-			for (let index = 0; index < MAP_SIZE.width / 500; index += 1) {
-				this.add
-					.text(index * 500 + 250, 34, String.fromCharCode(65 + index), labelStyle)
-					.setOrigin(0.5, 0)
-					.setAlpha(0.5)
-					.setResolution(textResolution)
-					.setDepth(-18);
-			}
-			for (let index = 0; index < MAP_SIZE.height / 500; index += 1) {
-				this.add
-					.text(34, index * 500 + 250, String(index + 1), labelStyle)
-					.setOrigin(0, 0.5)
-					.setAlpha(0.5)
-					.setResolution(textResolution)
-					.setDepth(-18);
-			}
-		}
-
-		/** Double frame with accent corner ticks — the "board" edge. */
-		private drawFrame() {
-			const frame = this.add.graphics().setDepth(-17);
-			frame.lineStyle(3, 0x2f3f52, 1);
-			frame.strokeRect(1.5, 1.5, MAP_SIZE.width - 3, MAP_SIZE.height - 3);
-			frame.lineStyle(1, 0xf0b429, 0.5);
-			frame.strokeRect(16, 16, MAP_SIZE.width - 32, MAP_SIZE.height - 32);
-
-			const tick = 70;
-			const inset = 16;
-			frame.lineStyle(5, 0xf0b429, 0.9);
-			const corners = [
-				{ x: inset, y: inset, dx: 1, dy: 1 },
-				{ x: MAP_SIZE.width - inset, y: inset, dx: -1, dy: 1 },
-				{ x: inset, y: MAP_SIZE.height - inset, dx: 1, dy: -1 },
-				{ x: MAP_SIZE.width - inset, y: MAP_SIZE.height - inset, dx: -1, dy: -1 }
-			];
-			for (const corner of corners) {
-				frame.lineBetween(corner.x, corner.y, corner.x + tick * corner.dx, corner.y);
-				frame.lineBetween(corner.x, corner.y, corner.x, corner.y + tick * corner.dy);
-			}
-		}
-
-		/** Placeholder entities: soft glow, ring, core and a plated label. */
-		private drawEntities() {
-			const entities = [
-				{ x: 520, y: 420, label: 'Pförtner', color: 0x4ec9a0 },
-				{ x: 1180, y: 700, label: 'Schlüssel', color: 0xe8a33d },
-				{ x: 1860, y: 1180, label: 'Bibliothek', color: 0x7aa2f7 },
-				{ x: 980, y: 1300, label: 'Kiste', color: 0xe5657a }
-			];
-
-			for (const entity of entities) {
-				const glow = this.add.graphics().setDepth(-6);
-				glow.fillStyle(entity.color, 0.1);
-				glow.fillCircle(entity.x, entity.y, 84);
-				glow.fillStyle(entity.color, 0.07);
-				glow.fillCircle(entity.x, entity.y, 56);
-
-				const marker = this.add.graphics().setDepth(0);
-				marker.lineStyle(3, entity.color, 0.95);
-				marker.strokeCircle(entity.x, entity.y, 26);
-				marker.fillStyle(entity.color, 0.9);
-				marker.fillCircle(entity.x, entity.y, 8);
-
-				const text = this.add
-					.text(entity.x + 44, entity.y, entity.label, {
-						fontFamily: 'system-ui, sans-serif',
-						fontSize: '26px',
-						color: '#e8ecf2'
-					})
-					.setOrigin(0, 0.5)
-					.setResolution(textResolution)
-					.setDepth(2);
-
-				const padding = 10;
-				const plate = this.add.graphics().setDepth(1);
-				const plateX = entity.x + 44 - padding;
-				const plateY = entity.y - text.height / 2 - padding / 2;
-				plate.fillStyle(0x0d131b, 0.72);
-				plate.fillRoundedRect(plateX, plateY, text.width + padding * 2, text.height + padding, 8);
-				plate.lineStyle(1, entity.color, 0.28);
-				plate.strokeRoundedRect(plateX, plateY, text.width + padding * 2, text.height + padding, 8);
-			}
-		}
-
-		/** Edge darkening so the map reads as a board rather than a tiled plane. */
-		private drawVignette() {
+		private paintVignette(key: string) {
 			const width = 320;
 			const height = 213;
-			const texture = this.textures.createCanvas('map-vignette', width, height);
+			const texture = this.textures.createCanvas(key, width, height);
 			if (!texture) return;
-
 			const ctx = texture.getContext();
 			const gradient = ctx.createRadialGradient(
 				width / 2,
@@ -361,30 +334,207 @@ export function createEditorGame(parent: HTMLElement, options: Options = {}): Ed
 			ctx.fillStyle = gradient;
 			ctx.fillRect(0, 0, width, height);
 			texture.refresh();
+		}
 
-			this.add
-				.image(0, 0, 'map-vignette')
-				.setOrigin(0, 0)
-				.setDisplaySize(MAP_SIZE.width, MAP_SIZE.height)
-				.setDepth(40);
+		/** Two grid levels — fine and coarse — as one graphics object. */
+		private paintGrid(grid: Phaser.GameObjects.Graphics, width: number, height: number) {
+			grid.lineStyle(1, 0x8fa3bd, 0.05);
+			for (let x = 100; x < width; x += 100) grid.lineBetween(x, 0, x, height);
+			for (let y = 100; y < height; y += 100) grid.lineBetween(0, y, width, y);
+
+			grid.lineStyle(1, 0xa8bdd6, 0.11);
+			for (let x = 500; x < width; x += 500) grid.lineBetween(x, 0, x, height);
+			for (let y = 500; y < height; y += 500) grid.lineBetween(0, y, width, y);
+		}
+
+		private paintEdgeLabels(width: number, height: number): Phaser.GameObjects.Text[] {
+			const labels: Phaser.GameObjects.Text[] = [];
+			const style = {
+				fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+				fontSize: '22px',
+				color: '#8798ad'
+			};
+
+			for (let index = 0; index < Math.ceil(width / 500); index += 1) {
+				labels.push(
+					this.add
+						.text(index * 500 + 250, 30, String.fromCharCode(65 + index), style)
+						.setOrigin(0.5, 0)
+						.setAlpha(0.5)
+						.setResolution(textResolution)
+						.setDepth(-18)
+				);
+			}
+			for (let index = 0; index < Math.ceil(height / 500); index += 1) {
+				labels.push(
+					this.add
+						.text(30, index * 500 + 250, String(index + 1), style)
+						.setOrigin(0, 0.5)
+						.setAlpha(0.5)
+						.setResolution(textResolution)
+						.setDepth(-18)
+				);
+			}
+			return labels;
+		}
+
+		private paintFrame(frame: Phaser.GameObjects.Graphics, width: number, height: number) {
+			frame.lineStyle(3, 0x2f3f52, 1);
+			frame.strokeRect(1.5, 1.5, width - 3, height - 3);
+			frame.lineStyle(1, 0xf0b429, 0.5);
+			frame.strokeRect(16, 16, width - 32, height - 32);
+
+			const tick = 70;
+			const inset = 16;
+			frame.lineStyle(5, 0xf0b429, 0.9);
+			const corners = [
+				{ x: inset, y: inset, dx: 1, dy: 1 },
+				{ x: width - inset, y: inset, dx: -1, dy: 1 },
+				{ x: inset, y: height - inset, dx: 1, dy: -1 },
+				{ x: width - inset, y: height - inset, dx: -1, dy: -1 }
+			];
+			for (const corner of corners) {
+				frame.lineBetween(corner.x, corner.y, corner.x + tick * corner.dx, corner.y);
+				frame.lineBetween(corner.x, corner.y, corner.x, corner.y + tick * corner.dy);
+			}
+		}
+
+		/** Rebuild the entity layer from the document. */
+		private buildEntities() {
+			this.entityLayer.removeAll(true);
+			this.entityObjects.clear();
+
+			for (const entity of caseDocument?.entities ?? []) {
+				const container = this.add.container(entity.position.x, entity.position.y);
+				const color = Phaser.Display.Color.HexStringToColor(entity.color).color;
+
+				const glow = this.add.graphics();
+				glow.fillStyle(color, 0.1);
+				glow.fillCircle(0, 0, 84);
+				glow.fillStyle(color, 0.07);
+				glow.fillCircle(0, 0, 56);
+
+				const marker = this.add.graphics();
+				marker.lineStyle(3, color, 0.95);
+				marker.strokeCircle(0, 0, 26);
+				marker.fillStyle(color, 0.9);
+				marker.fillCircle(0, 0, 8);
+
+				const text = this.add
+					.text(44, 0, entity.name, {
+						fontFamily: 'system-ui, sans-serif',
+						fontSize: '26px',
+						color: '#e8ecf2'
+					})
+					.setOrigin(0, 0.5)
+					.setResolution(textResolution);
+
+				const padding = 10;
+				const plate = this.add.graphics();
+				const plateX = 44 - padding;
+				const plateY = -text.height / 2 - padding / 2;
+				const plateWidth = text.width + padding * 2;
+				const plateHeight = text.height + padding;
+				plate.fillStyle(0x0d131b, 0.72);
+				plate.fillRoundedRect(plateX, plateY, plateWidth, plateHeight, 8);
+				plate.lineStyle(1, color, 0.28);
+				plate.strokeRoundedRect(plateX, plateY, plateWidth, plateHeight, 8);
+
+				container.add([glow, plate, text, marker]);
+				container.setSize(90, 90);
+				this.entityLayer.add(container);
+				this.entityObjects.set(entity.id, container);
+			}
+
+			this.drawSelection();
+		}
+
+		private entityColor(id: string): number {
+			const entity = caseDocument?.entities.find((candidate) => candidate.id === id);
+			return Phaser.Display.Color.HexStringToColor(entity?.color ?? '#ffffff').color;
+		}
+
+		private drawSelection() {
+			this.selectionLayer.clear();
+			if (!this.selectedId) return;
+			const entity = caseDocument?.entities.find((candidate) => candidate.id === this.selectedId);
+			if (!entity) return;
+			const container = this.entityObjects.get(entity.id);
+			const x = container?.x ?? entity.position.x;
+			const y = container?.y ?? entity.position.y;
+			this.selectionLayer.lineStyle(2, 0xffffff, 0.85);
+			this.selectionLayer.strokeCircle(x, y, 34);
+			this.selectionLayer.lineStyle(1, this.entityColor(entity.id), 0.6);
+			this.selectionLayer.strokeCircle(x, y, 40);
+		}
+
+		private entityAt(world: Point): CaseEntity | null {
+			let best: CaseEntity | null = null;
+			let bestDistance = HIT_RADIUS;
+			for (const entity of caseDocument?.entities ?? []) {
+				const distance = Math.hypot(entity.position.x - world.x, entity.position.y - world.y);
+				if (distance <= bestDistance) {
+					best = entity;
+					bestDistance = distance;
+				}
+			}
+			return best;
 		}
 
 		private bindInput() {
 			const active = ensureController();
 
 			this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-				const point = toCss({ x: pointer.x, y: pointer.y });
-				active.pointerDown({ id: pointer.id, x: point.x, y: point.y });
+				const css = toCss({ x: pointer.x, y: pointer.y });
+				const world = toWorld(css);
+				const hit = this.entityAt(world);
+
+				if (hit) {
+					this.dragging = {
+						id: hit.id,
+						offset: { x: world.x - hit.position.x, y: world.y - hit.position.y }
+					};
+					this.selectedId = hit.id;
+					options.onSelect?.(hit.id);
+					this.drawSelection();
+					return;
+				}
+
+				this.selectedId = null;
+				options.onSelect?.(null);
+				this.drawSelection();
+				active.pointerDown({ id: pointer.id, x: css.x, y: css.y });
 			});
 
 			this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
-				const point = toCss({ x: pointer.x, y: pointer.y });
-				active.pointerMove({ id: pointer.id, x: point.x, y: point.y });
+				const css = toCss({ x: pointer.x, y: pointer.y });
+
+				if (this.dragging) {
+					const world = toWorld(css);
+					const size = mapSize();
+					const x = Phaser.Math.Clamp(world.x - this.dragging.offset.x, 0, size.width);
+					const y = Phaser.Math.Clamp(world.y - this.dragging.offset.y, 0, size.height);
+					this.entityObjects.get(this.dragging.id)?.setPosition(x, y);
+					this.drawSelection();
+					return;
+				}
+
+				active.pointerMove({ id: pointer.id, x: css.x, y: css.y });
 			});
 
 			// A release outside the canvas belongs to a specific pointer, so it must
 			// not clear the other fingers of a running pinch.
-			const release = (pointer: Phaser.Input.Pointer) => active.pointerUp(pointer.id);
+			const release = (pointer: Phaser.Input.Pointer) => {
+				if (this.dragging) {
+					const container = this.entityObjects.get(this.dragging.id);
+					if (container) {
+						options.onEntityMove?.(this.dragging.id, { x: container.x, y: container.y });
+					}
+					this.dragging = null;
+					return;
+				}
+				active.pointerUp(pointer.id);
+			};
 			this.input.on('pointerup', release);
 			this.input.on('pointerupoutside', release);
 
@@ -446,6 +596,14 @@ export function createEditorGame(parent: HTMLElement, options: Options = {}): Ed
 		camera() {
 			return controller?.camera ?? { x: 0, y: 0, zoom: 1 };
 		},
+		setDocument(next: CaseDocument) {
+			caseDocument = next;
+			ensureController().setMap(mapSize());
+			scene?.refresh();
+		},
+		setSelected(id: string | null) {
+			scene?.setSelection(id);
+		},
 		destroy() {
 			resizeObserver?.disconnect();
 			resizeObserver = null;
@@ -456,6 +614,7 @@ export function createEditorGame(parent: HTMLElement, options: Options = {}): Ed
 			}
 			globalListeners.length = 0;
 			controller = null;
+			scene = null;
 			game.destroy(true);
 		}
 	};

@@ -6,6 +6,7 @@
 		pwa,
 		promptInstall
 	} from '#lib/pwa/state.svelte';
+	import { t } from '#lib/i18n/index.svelte';
 
 	const notice = $derived(pwa().state);
 	const canInstall = $derived(pwa().canInstall);
@@ -13,31 +14,31 @@
 
 {#if notice.phase === 'offline-ready'}
 	<div class="notice" role="status" data-testid="pwa-banner" data-phase="offline-ready">
-		<span>Offline bereit — die App startet jetzt auch ohne Netzwerk.</span>
-		<button type="button" onclick={dismissNotice}>OK</button>
+		<span>{t('pwa.offlineReady')}</span>
+		<button type="button" onclick={dismissNotice}>{t('pwa.ok')}</button>
 	</div>
 {:else if notice.phase === 'update-available'}
 	<div class="notice" role="status" data-testid="pwa-banner" data-phase="update-available">
-		<span>Neue Version verfügbar.</span>
-		<button type="button" class="primary" onclick={applyUpdate}>Neu laden</button>
-		<button type="button" onclick={dismissNotice}>Später</button>
+		<span>{t('pwa.update')}</span>
+		<button type="button" class="primary" onclick={applyUpdate}>{t('pwa.reload')}</button>
+		<button type="button" onclick={dismissNotice}>{t('pwa.later')}</button>
 	</div>
 {:else if notice.phase === 'error'}
 	<div class="notice error" role="alert" data-testid="pwa-banner" data-phase="error">
-		<span>Offline-Cache nicht verfügbar: {notice.error}</span>
-		<button type="button" onclick={dismissNotice}>OK</button>
+		<span>{t('pwa.cacheError', { message: notice.error ?? '' })}</span>
+		<button type="button" onclick={dismissNotice}>{t('pwa.ok')}</button>
 	</div>
 {/if}
 
 {#if canInstall}
 	<div class="notice install" role="status" data-testid="install-banner">
-		<span>KrimiMap als App installieren?</span>
-		<button type="button" class="primary" onclick={promptInstall}>Installieren</button>
+		<span>{t('pwa.install.question')}</span>
+		<button type="button" class="primary" onclick={promptInstall}>{t('pwa.install.button')}</button>
 		<button
 			type="button"
 			class="close"
-			aria-label="Installationshinweis schließen"
-			title="Nicht mehr anzeigen"
+			aria-label={t('pwa.install.close')}
+			title={t('pwa.install.closeTitle')}
 			onclick={dismissInstall}>×</button
 		>
 	</div>
