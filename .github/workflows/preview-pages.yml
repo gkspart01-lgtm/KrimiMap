@@ -32,7 +32,7 @@ jobs:
       - name: Build for the preview sub-path
         env:
           PUBLIC_BASE_PATH: /${{ github.event.repository.name }}/pr-${{ github.event.number }}
-          VITE_BUILD_INFO: PR #${{ github.event.number }} @ ${{ github.event.pull_request.head.sha }}
+          VITE_BUILD_INFO: 'PR #${{ github.event.number }} @ ${{ github.event.pull_request.head.sha }}'
         run: npm run build
 
       - name: Publish preview
