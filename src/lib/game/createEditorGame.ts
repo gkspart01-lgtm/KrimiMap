@@ -169,65 +169,204 @@ export function createEditorGame(parent: HTMLElement, options: Options = {}): Ed
 
 		create() {
 			const active = ensureController();
-			this.drawPlaceholderMap();
+			this.drawMap();
 			this.bindInput();
 			applyToScene(active.camera);
 			publish(active.camera);
 		}
 
-		private drawPlaceholderMap() {
-			const background = this.add.graphics();
-			background.fillStyle(0x181f2a, 1);
-			background.fillRect(0, 0, MAP_SIZE.width, MAP_SIZE.height);
+		/**
+		 * The placeholder map, drawn to look like a cartographer's board rather than
+		 * a debug grid: gradient backdrop, two-level grid, frame with corner ticks,
+		 * edge coordinates, and entity markers with soft glow and readable labels.
+		 *
+		 * Everything is generated at boot, so there are no image assets to ship or
+		 * license. Case data replaces the entity list in Phase 2.
+		 */
+		private drawMap() {
+			this.drawBackdrop();
+			this.drawGrid();
+			this.drawFrame();
+			this.drawEntities();
+			this.drawVignette();
+		}
 
-			const grid = this.add.graphics();
-			grid.lineStyle(1, 0x263142, 1);
-			for (let x = 0; x <= MAP_SIZE.width; x += 200) {
-				grid.beginPath();
-				grid.moveTo(x, 0);
-				grid.lineTo(x, MAP_SIZE.height);
-				grid.strokePath();
+		/**
+		 * Gradient backdrop plus a faint light pool, as one stretchable texture.
+		 * Deliberately small: gradients do not need map-sized texels, and large
+		 * textures make every frame expensive on software rendering.
+		 */
+		private drawBackdrop() {
+			const width = 480;
+			const height = 320;
+			const texture = this.textures.createCanvas('map-backdrop', width, height);
+			if (!texture) return;
+
+			const ctx = texture.getContext();
+			const vertical = ctx.createLinearGradient(0, 0, 0, height);
+			vertical.addColorStop(0, '#141d29');
+			vertical.addColorStop(0.55, '#19232f');
+			vertical.addColorStop(1, '#0e141d');
+			ctx.fillStyle = vertical;
+			ctx.fillRect(0, 0, width, height);
+
+			const pool = ctx.createRadialGradient(
+				width * 0.5,
+				height * 0.32,
+				40,
+				width * 0.5,
+				height * 0.32,
+				width * 0.6
+			);
+			pool.addColorStop(0, 'rgba(122, 162, 247, 0.12)');
+			pool.addColorStop(1, 'rgba(122, 162, 247, 0)');
+			ctx.fillStyle = pool;
+			ctx.fillRect(0, 0, width, height);
+
+			texture.refresh();
+			this.add
+				.image(0, 0, 'map-backdrop')
+				.setOrigin(0, 0)
+				.setDisplaySize(MAP_SIZE.width, MAP_SIZE.height)
+				.setDepth(-30);
+		}
+
+		/** Two grid levels plus letters on top and numbers on the left edge. */
+		private drawGrid() {
+			const fine = this.add.graphics().setDepth(-20);
+			fine.lineStyle(1, 0x8fa3bd, 0.05);
+			for (let x = 100; x < MAP_SIZE.width; x += 100) {
+				fine.lineBetween(x, 0, x, MAP_SIZE.height);
 			}
-			for (let y = 0; y <= MAP_SIZE.height; y += 200) {
-				grid.beginPath();
-				grid.moveTo(0, y);
-				grid.lineTo(MAP_SIZE.width, y);
-				grid.strokePath();
+			for (let y = 100; y < MAP_SIZE.height; y += 100) {
+				fine.lineBetween(0, y, MAP_SIZE.width, y);
 			}
 
-			const border = this.add.graphics();
-			border.lineStyle(4, 0xf0b429, 0.9);
-			border.strokeRect(0, 0, MAP_SIZE.width, MAP_SIZE.height);
+			const coarse = this.add.graphics().setDepth(-19);
+			coarse.lineStyle(1, 0xa8bdd6, 0.11);
+			for (let x = 500; x < MAP_SIZE.width; x += 500) {
+				coarse.lineBetween(x, 0, x, MAP_SIZE.height);
+			}
+			for (let y = 500; y < MAP_SIZE.height; y += 500) {
+				coarse.lineBetween(0, y, MAP_SIZE.width, y);
+			}
 
-			// Placeholder entities: positions come from case data in Phase 2.
+			const labelStyle = {
+				fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+				fontSize: '22px',
+				color: '#8798ad'
+			};
+			for (let index = 0; index < MAP_SIZE.width / 500; index += 1) {
+				this.add
+					.text(index * 500 + 250, 34, String.fromCharCode(65 + index), labelStyle)
+					.setOrigin(0.5, 0)
+					.setAlpha(0.5)
+					.setResolution(textResolution)
+					.setDepth(-18);
+			}
+			for (let index = 0; index < MAP_SIZE.height / 500; index += 1) {
+				this.add
+					.text(34, index * 500 + 250, String(index + 1), labelStyle)
+					.setOrigin(0, 0.5)
+					.setAlpha(0.5)
+					.setResolution(textResolution)
+					.setDepth(-18);
+			}
+		}
+
+		/** Double frame with accent corner ticks — the "board" edge. */
+		private drawFrame() {
+			const frame = this.add.graphics().setDepth(-17);
+			frame.lineStyle(3, 0x2f3f52, 1);
+			frame.strokeRect(1.5, 1.5, MAP_SIZE.width - 3, MAP_SIZE.height - 3);
+			frame.lineStyle(1, 0xf0b429, 0.5);
+			frame.strokeRect(16, 16, MAP_SIZE.width - 32, MAP_SIZE.height - 32);
+
+			const tick = 70;
+			const inset = 16;
+			frame.lineStyle(5, 0xf0b429, 0.9);
+			const corners = [
+				{ x: inset, y: inset, dx: 1, dy: 1 },
+				{ x: MAP_SIZE.width - inset, y: inset, dx: -1, dy: 1 },
+				{ x: inset, y: MAP_SIZE.height - inset, dx: 1, dy: -1 },
+				{ x: MAP_SIZE.width - inset, y: MAP_SIZE.height - inset, dx: -1, dy: -1 }
+			];
+			for (const corner of corners) {
+				frame.lineBetween(corner.x, corner.y, corner.x + tick * corner.dx, corner.y);
+				frame.lineBetween(corner.x, corner.y, corner.x, corner.y + tick * corner.dy);
+			}
+		}
+
+		/** Placeholder entities: soft glow, ring, core and a plated label. */
+		private drawEntities() {
 			const entities = [
 				{ x: 520, y: 420, label: 'Pförtner', color: 0x4ec9a0 },
-				{ x: 1180, y: 700, label: 'Clue: Schlüssel', color: 0xe8a33d },
+				{ x: 1180, y: 700, label: 'Schlüssel', color: 0xe8a33d },
 				{ x: 1860, y: 1180, label: 'Bibliothek', color: 0x7aa2f7 },
-				{ x: 980, y: 1300, label: 'Objekt: Kiste', color: 0xe5657a }
+				{ x: 980, y: 1300, label: 'Kiste', color: 0xe5657a }
 			];
 
 			for (const entity of entities) {
-				const marker = this.add.rectangle(entity.x, entity.y, 90, 90, entity.color, 0.85);
-				marker.setStrokeStyle(3, 0x0f1218, 1);
-				this.add
-					.text(entity.x + 60, entity.y - 10, entity.label, {
+				const glow = this.add.graphics().setDepth(-6);
+				glow.fillStyle(entity.color, 0.1);
+				glow.fillCircle(entity.x, entity.y, 84);
+				glow.fillStyle(entity.color, 0.07);
+				glow.fillCircle(entity.x, entity.y, 56);
+
+				const marker = this.add.graphics().setDepth(0);
+				marker.lineStyle(3, entity.color, 0.95);
+				marker.strokeCircle(entity.x, entity.y, 26);
+				marker.fillStyle(entity.color, 0.9);
+				marker.fillCircle(entity.x, entity.y, 8);
+
+				const text = this.add
+					.text(entity.x + 44, entity.y, entity.label, {
 						fontFamily: 'system-ui, sans-serif',
 						fontSize: '26px',
 						color: '#e8ecf2'
 					})
 					.setOrigin(0, 0.5)
-					.setResolution(textResolution);
+					.setResolution(textResolution)
+					.setDepth(2);
+
+				const padding = 10;
+				const plate = this.add.graphics().setDepth(1);
+				const plateX = entity.x + 44 - padding;
+				const plateY = entity.y - text.height / 2 - padding / 2;
+				plate.fillStyle(0x0d131b, 0.72);
+				plate.fillRoundedRect(plateX, plateY, text.width + padding * 2, text.height + padding, 8);
+				plate.lineStyle(1, entity.color, 0.28);
+				plate.strokeRoundedRect(plateX, plateY, text.width + padding * 2, text.height + padding, 8);
 			}
+		}
+
+		/** Edge darkening so the map reads as a board rather than a tiled plane. */
+		private drawVignette() {
+			const width = 320;
+			const height = 213;
+			const texture = this.textures.createCanvas('map-vignette', width, height);
+			if (!texture) return;
+
+			const ctx = texture.getContext();
+			const gradient = ctx.createRadialGradient(
+				width / 2,
+				height / 2,
+				width * 0.28,
+				width / 2,
+				height / 2,
+				width * 0.62
+			);
+			gradient.addColorStop(0, 'rgba(0, 0, 0, 0)');
+			gradient.addColorStop(1, 'rgba(0, 0, 0, 0.55)');
+			ctx.fillStyle = gradient;
+			ctx.fillRect(0, 0, width, height);
+			texture.refresh();
 
 			this.add
-				.text(40, 40, `KrimiMap — Kartenbereich ${MAP_SIZE.width}×${MAP_SIZE.height}`, {
-					fontFamily: 'system-ui, sans-serif',
-					fontSize: '34px',
-					color: '#97a3b4'
-				})
+				.image(0, 0, 'map-vignette')
 				.setOrigin(0, 0)
-				.setResolution(textResolution);
+				.setDisplaySize(MAP_SIZE.width, MAP_SIZE.height)
+				.setDepth(40);
 		}
 
 		private bindInput() {

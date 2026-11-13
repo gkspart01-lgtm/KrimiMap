@@ -1,5 +1,11 @@
 <script lang="ts">
-	import { applyUpdate, dismissNotice, pwa, promptInstall } from '#lib/pwa/state.svelte';
+	import {
+		applyUpdate,
+		dismissInstall,
+		dismissNotice,
+		pwa,
+		promptInstall
+	} from '#lib/pwa/state.svelte';
 
 	const notice = $derived(pwa().state);
 	const canInstall = $derived(pwa().canInstall);
@@ -27,6 +33,13 @@
 	<div class="notice install" role="status" data-testid="install-banner">
 		<span>KrimiMap als App installieren?</span>
 		<button type="button" class="primary" onclick={promptInstall}>Installieren</button>
+		<button
+			type="button"
+			class="close"
+			aria-label="Installationshinweis schließen"
+			title="Nicht mehr anzeigen"
+			onclick={dismissInstall}>×</button
+		>
 	</div>
 {/if}
 
@@ -83,5 +96,18 @@
 		background: var(--accent);
 		color: #0f1218;
 		font-weight: 600;
+	}
+
+	button.close {
+		padding: 0.15rem 0.45rem;
+		border-color: transparent;
+		background: transparent;
+		color: var(--text-dim);
+		font-size: 1.1rem;
+		line-height: 1;
+	}
+
+	button.close:hover {
+		color: var(--text);
 	}
 </style>

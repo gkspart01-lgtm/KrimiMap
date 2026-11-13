@@ -6,20 +6,37 @@
 	import ConnectionPill from '#lib/components/ConnectionPill.svelte';
 	import PwaNotice from '#lib/components/PwaNotice.svelte';
 	import { startPwa } from '#lib/pwa/state.svelte';
+	import { debug, initDebug, toggleDebug } from '#lib/ui/debug.svelte';
 
 	let { children }: { children: Snippet } = $props();
 
 	// Service worker, connection events and the install prompt only exist in the
 	// browser; prerendering never reaches this.
-	onMount(startPwa);
+	onMount(() => {
+		initDebug();
+		startPwa();
+	});
 </script>
 
 <header class="topbar">
 	<a class="brand" href={resolve('/')}>KrimiMap</a>
 	<nav>
 		<a href={resolve('editor/')}>Editor</a>
-		<a href={resolve('spike/webllm/')}>AI-Spike</a>
+		{#if debug()}
+			<a href={resolve('spike/webllm/')}>AI-Spike</a>
+		{/if}
 		<ConnectionPill />
+		<button
+			type="button"
+			class="debug-toggle"
+			class:active={debug()}
+			aria-pressed={debug()}
+			aria-label="Debug-Ansicht umschalten"
+			title="Debug-Ansicht: technische Details ein-/ausblenden"
+			onclick={toggleDebug}
+		>
+			⚙
+		</button>
 	</nav>
 </header>
 
@@ -64,5 +81,30 @@
 
 	nav a:hover {
 		color: var(--text);
+	}
+
+	.debug-toggle {
+		display: grid;
+		place-items: center;
+		width: 1.9rem;
+		height: 1.9rem;
+		padding: 0;
+		border: 1px solid var(--border);
+		border-radius: 50%;
+		background: transparent;
+		color: var(--text-dim);
+		font-size: 0.9rem;
+		line-height: 1;
+		cursor: pointer;
+	}
+
+	.debug-toggle:hover {
+		color: var(--text);
+	}
+
+	.debug-toggle.active {
+		color: #0f1218;
+		background: var(--accent);
+		border-color: var(--accent);
 	}
 </style>
