@@ -38,6 +38,16 @@ it produce failures that look like rendering bugs.
   devices (capitalised ids, repeated ids, dangling references).
 - `spike-attempts.test.ts` — retry loop with a fake engine, request shape per
   structured mode, "schema violations are not accepted".
+- `case-document.test.ts` — schema validation (ids, kinds, colours, positions,
+  references, self-reference), slug/unique ids, and the migration boundary
+  including "refuse a document from a newer version".
+- `case-commands.test.ts` — the pure edit commands: add/update/move/remove,
+  reference cleanup on delete, clamping, immutability, `updatedAt` bumps.
+- `case-json.test.ts` — round trip, size limit, broken JSON, foreign files,
+  schema errors with exact paths, identity collisions on import.
+- `case-storage.test.ts` — the IndexedDB repository against `fake-indexeddb`:
+  save/list/load/delete, newest-first ordering, overwrite instead of duplicate,
+  and a refused save for invalid documents.
 - `pwa-status.test.ts` — the offline/update notice state machine: a pending
   update survives an "offline ready" event, dismissal resets, "offline ready" is
   only claimed when a worker controls the page.
@@ -65,6 +75,9 @@ and the PWA tests would fail against a perfectly good build.
   the limits, "Ganze Karte" refits, a drag starting on the info panel still
   pans, navigation works, the WebGPU fallback message is honest, and no request
   leaves the static origin.
+- **cases flow** (`cases.spec.ts`): create a case, add an entity, reload and find
+  it again, edit while offline, import a version-0 draft (migrated), reject a
+  broken import with a readable message, delete a case.
 - **mobile project** (Pixel 5, touch): canvas renders at the phone pixel ratio,
   one-finger drag pans without scrolling the page, two-finger pinch zooms in and
   out around the midpoint. Multi-touch goes through the DevTools protocol

@@ -1,73 +1,244 @@
 <script lang="ts">
+	/* eslint-disable svelte/no-navigation-without-resolve -- every target is built with resolve() plus a query string */
 	import { onMount } from 'svelte';
+	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
+	import { resolve } from '$app/paths';
 	import type { EditorGameHandle } from '#lib/game/createEditorGame';
+	import type { EntityKind } from '#lib/domain/case-document';
+	import { ENTITY_KINDS, ENTITY_KIND_COLORS } from '#lib/domain/case-document';
 	import { debug } from '#lib/ui/debug.svelte';
+	import {
+		addEntityAtCenter,
+		caseStore,
+		createCase,
+		deleteCaseEntity,
+		flushCaseSave,
+		lastCaseId,
+		moveCaseEntity,
+		openCase,
+		renameCurrentCase,
+		selectEntity,
+		updateCaseEntity
+	} from '#lib/state/cases.svelte';
 
-	let host: HTMLDivElement;
+	const store = caseStore();
+
+	let host = $state<HTMLDivElement | null>(null);
 	let handle: EditorGameHandle | null = null;
 	let ready = $state(false);
-	let error = $state<string | null>(null);
+	let fatal = $state<string | null>(null);
 	let zoom = $state(0);
 	let centre = $state({ x: 0, y: 0 });
+
+	const saveLabel = $derived(
+		store.saveState === 'saving'
+			? 'Speichert…'
+			: store.saveState === 'dirty'
+				? 'Ungespeichert'
+				: store.saveState === 'error'
+					? 'Speichern fehlgeschlagen'
+					: store.saveState === 'saved'
+						? 'Gespeichert'
+						: ''
+	);
 
 	onMount(() => {
 		let cancelled = false;
 
-		// Phaser and WebGL must only start in the browser, never during prerender.
-		import('#lib/game/createEditorGame')
-			.then(({ createEditorGame }) => {
-				if (cancelled) return;
-				handle = createEditorGame(host, {
-					onCamera: (camera) => {
-						zoom = camera.zoom;
-						centre = { x: Math.round(camera.x), y: Math.round(camera.y) };
-					}
-				});
-				ready = true;
-			})
-			.catch((cause: unknown) => {
-				error = cause instanceof Error ? cause.message : String(cause);
+		(async () => {
+			// `?id=` wins, then the last opened case, then a brand new one: the
+			// editor is never a dead end.
+			const requested = page.url.searchParams.get('id');
+			const document = requested ? await openCase(requested) : await openCase(lastCaseId() ?? '');
+			const active = document ?? (await createCase());
+			if (cancelled) return;
+			if (!active) {
+				fatal = 'Der Fall konnte nicht geladen werden.';
+				return;
+			}
+			if (!requested) await goto(`${resolve('editor/')}?id=${active.id}`, { replaceState: true });
+
+			// Phaser and WebGL must only start in the browser, never during prerender.
+			const { createEditorGame } = await import('#lib/game/createEditorGame');
+			if (cancelled || !host) return;
+			handle = createEditorGame(host, {
+				document: active,
+				onCamera: (camera) => {
+					zoom = camera.zoom;
+					centre = { x: Math.round(camera.x), y: Math.round(camera.y) };
+				},
+				onSelect: (id) => selectEntity(id),
+				onEntityMove: (id, position) => moveCaseEntity(id, position)
 			});
+			handle.fit();
+			ready = true;
+		})().catch((cause: unknown) => {
+			fatal = cause instanceof Error ? cause.message : String(cause);
+		});
 
 		return () => {
 			cancelled = true;
+			void flushCaseSave();
 			handle?.destroy();
 			handle = null;
 		};
 	});
+
+	// Keep the canvas in sync with the document and the selection.
+	$effect(() => {
+		const document = store.current;
+		if (handle && document) handle.setDocument(document);
+	});
+
+	$effect(() => {
+		handle?.setSelected(store.selectedId);
+	});
+
+	function addEntity(kind: EntityKind) {
+		const camera = handle?.camera() ?? { x: 1200, y: 800, zoom: 1 };
+		const offset = 40 + Math.round(Math.random() * 120);
+		addEntityAtCenter(kind, { x: camera.x + offset, y: camera.y + offset });
+	}
+
+	function onKindChange(kind: EntityKind) {
+		patchSelected({ kind, color: ENTITY_KIND_COLORS[kind] });
+	}
+
+	/** Template-safe patch: no non-null assertions inside markup expressions. */
+	function patchSelected(patch: Parameters<typeof updateCaseEntity>[1]) {
+		const selected = store.selected;
+		if (!selected) return;
+		updateCaseEntity(selected.id, patch);
+	}
+
+	function deleteSelected() {
+		const selected = store.selected;
+		if (!selected) return;
+		deleteCaseEntity(selected.id);
+	}
 </script>
 
 <svelte:head>
 	<title>KrimiMap — Editor</title>
 </svelte:head>
 
-<div class="workspace">
-	<div class="canvas" bind:this={host} data-testid="map"></div>
+{#if fatal}
+	<div class="fatal">
+		<p>{fatal}</p>
+		<a href={resolve('cases/')}>Zur Fallliste</a>
+	</div>
+{:else}
+	<div class="workspace">
+		<div class="canvas" bind:this={host} data-testid="map"></div>
 
-	<div class="hud" aria-hidden="true">
-		<strong>Karte</strong>
-		<span class="muted small">Ziehen = verschieben · Mausrad / zwei Finger = zoomen</span>
-		{#if debug()}
-			<span class="small mono" data-testid="zoom-label"
-				>Zoom {(zoom * 100).toFixed(0)}% · Mitte {centre.x}/{centre.y}</span
+		<div class="hud" aria-hidden="true" data-testid="map-hud">
+			<strong>{store.current?.title ?? 'Karte'}</strong>
+			<span class="muted small">Ziehen = Karte verschieben · Marker ziehen = platzieren</span>
+			{#if debug()}
+				<span class="small mono" data-testid="zoom-label"
+					>Zoom {(zoom * 100).toFixed(0)}% · Mitte {centre.x}/{centre.y} ·
+					{store.current?.map.width}×{store.current?.map.height}</span
+				>
+			{/if}
+		</div>
+
+		<aside class="panel" data-testid="editor-panel">
+			<div class="panel-head">
+				<input
+					class="title"
+					value={store.current?.title ?? ''}
+					oninput={(event) => renameCurrentCase(event.currentTarget.value)}
+					aria-label="Titel des Falls"
+				/>
+				<a class="back" href={resolve('cases/')}>Fälle</a>
+			</div>
+
+			<div
+				class="status"
+				data-testid="save-state"
+				data-state={store.saveState}
+				title={store.error ?? ''}
 			>
+				<span class="dot"></span>{saveLabel}
+			</div>
+			{#if store.error}
+				<p class="save-error small" data-testid="save-error">{store.error}</p>
+			{/if}
+
+			<div class="add-row">
+				{#each ENTITY_KINDS as kind (kind)}
+					<button
+						class="add"
+						style="--kind-color: {ENTITY_KIND_COLORS[kind]}"
+						onclick={() => addEntity(kind)}>+ {kind}</button
+					>
+				{/each}
+			</div>
+
+			{#if store.selected}
+				<div class="entity-form" data-testid="entity-form">
+					<label>
+						<span>Name</span>
+						<input
+							value={store.selected.name}
+							oninput={(event) => patchSelected({ name: event.currentTarget.value })}
+						/>
+					</label>
+					<label>
+						<span>Art</span>
+						<select
+							value={store.selected.kind}
+							onchange={(event) => onKindChange(event.currentTarget.value as EntityKind)}
+						>
+							{#each ENTITY_KINDS as kind (kind)}
+								<option value={kind}>{kind}</option>
+							{/each}
+						</select>
+					</label>
+					<label>
+						<span>Beschreibung</span>
+						<textarea
+							rows="3"
+							value={store.selected.description}
+							oninput={(event) => patchSelected({ description: event.currentTarget.value })}
+						></textarea>
+					</label>
+					<div class="coords small muted">
+						x {Math.round(store.selected.position.x)} · y {Math.round(store.selected.position.y)} · id
+						<code>{store.selected.id}</code>
+					</div>
+					<button class="danger" onclick={deleteSelected}>Eintrag löschen</button>
+				</div>
+			{:else}
+				<p class="muted small hint">
+					Kein Eintrag ausgewählt. Marker auf der Karte anklicken oder oben einen neuen anlegen.
+				</p>
+			{/if}
+
+			{#if store.issues.length > 0}
+				<div class="issues" data-testid="case-issues">
+					<strong class="small">Hinweise</strong>
+					<ul class="small">
+						{#each store.issues.slice(0, 5) as issue (issue.path + issue.message)}
+							<li>{issue.path}: {issue.message}</li>
+						{/each}
+					</ul>
+				</div>
+			{/if}
+		</aside>
+
+		<div class="toolbar">
+			<button onclick={() => handle?.zoomOut()} aria-label="Herauszoomen">−</button>
+			<button onclick={() => handle?.zoomIn()} aria-label="Hineinzoomen">+</button>
+			<button onclick={() => handle?.fit()}>Ganze Karte</button>
+		</div>
+
+		{#if !ready && !fatal}
+			<div class="overlay muted">Karte wird geladen…</div>
 		{/if}
 	</div>
-
-	{#if !ready && !error}
-		<div class="overlay muted">Karte wird geladen…</div>
-	{/if}
-
-	{#if error}
-		<div class="overlay error">Canvas-Start fehlgeschlagen: {error}</div>
-	{/if}
-
-	<div class="toolbar">
-		<button onclick={() => handle?.zoomOut()} aria-label="Herauszoomen">−</button>
-		<button onclick={() => handle?.zoomIn()} aria-label="Hineinzoomen">+</button>
-		<button onclick={() => handle?.fit()}>Ganze Karte</button>
-	</div>
-</div>
+{/if}
 
 <style>
 	.workspace {
@@ -85,25 +256,25 @@
 	}
 
 	.hud,
-	.toolbar {
+	.toolbar,
+	.panel {
 		position: absolute;
 		z-index: 2;
-		display: flex;
-		gap: 0.5rem;
-		align-items: center;
-		background: rgba(18, 21, 27, 0.86);
+		background: rgba(18, 21, 27, 0.9);
 		border: 1px solid var(--border);
 		border-radius: 10px;
-		padding: 0.5rem 0.75rem;
 		backdrop-filter: blur(6px);
 	}
 
 	.hud {
 		top: 0.6rem;
 		left: 0.75rem;
+		display: flex;
 		flex-direction: column;
 		align-items: flex-start;
-		max-width: 18rem;
+		gap: 0.15rem;
+		max-width: 20rem;
+		padding: 0.5rem 0.75rem;
 		/* Informational only: a drag that starts here must still move the map. */
 		pointer-events: none;
 	}
@@ -111,6 +282,157 @@
 	.toolbar {
 		right: 0.75rem;
 		bottom: 0.9rem;
+		display: flex;
+		gap: 0.5rem;
+		align-items: center;
+		padding: 0.5rem 0.75rem;
+	}
+
+	.panel {
+		top: 0.6rem;
+		right: 0.75rem;
+		bottom: 4.6rem;
+		width: min(20rem, calc(100vw - 1.5rem));
+		display: flex;
+		flex-direction: column;
+		gap: 0.6rem;
+		padding: 0.75rem;
+		overflow-y: auto;
+	}
+
+	.panel-head {
+		display: flex;
+		gap: 0.5rem;
+		align-items: center;
+	}
+
+	.title {
+		flex: 1;
+		min-width: 0;
+		padding: 0.35rem 0.5rem;
+		border: 1px solid transparent;
+		border-radius: 8px;
+		background: transparent;
+		color: var(--text);
+		font: inherit;
+		font-weight: 600;
+	}
+
+	.title:hover,
+	.title:focus {
+		border-color: var(--border);
+		background: rgba(255, 255, 255, 0.03);
+	}
+
+	.back {
+		color: var(--text-dim);
+		font-size: 0.8rem;
+		text-decoration: none;
+	}
+
+	.back:hover {
+		color: var(--text);
+	}
+
+	.status {
+		display: flex;
+		align-items: center;
+		gap: 0.4rem;
+		font-size: 0.72rem;
+		color: var(--text-dim);
+	}
+
+	.status .dot {
+		width: 0.4rem;
+		height: 0.4rem;
+		border-radius: 50%;
+		background: var(--accent);
+	}
+
+	.status[data-state='dirty'] .dot,
+	.status[data-state='saving'] .dot {
+		background: #e8a33d;
+	}
+
+	.status[data-state='error'] .dot {
+		background: var(--error);
+	}
+
+	.save-error {
+		margin: 0;
+		color: var(--error);
+	}
+
+	.add-row {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 0.4rem;
+	}
+
+	button.add {
+		padding: 0.4rem 0.5rem;
+		border: 1px solid color-mix(in srgb, var(--kind-color) 55%, var(--border));
+		border-radius: 8px;
+		background: color-mix(in srgb, var(--kind-color) 12%, transparent);
+		color: var(--text);
+		font: inherit;
+		font-size: 0.78rem;
+		cursor: pointer;
+	}
+
+	button.add:hover {
+		background: color-mix(in srgb, var(--kind-color) 24%, transparent);
+	}
+
+	.entity-form {
+		display: grid;
+		gap: 0.5rem;
+		padding-top: 0.6rem;
+		border-top: 1px solid var(--border);
+	}
+
+	.entity-form label {
+		display: grid;
+		gap: 0.2rem;
+		font-size: 0.72rem;
+		color: var(--text-dim);
+	}
+
+	.entity-form input,
+	.entity-form select,
+	.entity-form textarea {
+		padding: 0.35rem 0.5rem;
+		border: 1px solid var(--border);
+		border-radius: 8px;
+		background: #0f1218;
+		color: var(--text);
+		font: inherit;
+		font-size: 0.82rem;
+	}
+
+	.coords code {
+		font-size: 0.7rem;
+	}
+
+	button.danger {
+		padding: 0.4rem 0.6rem;
+		border: 1px solid color-mix(in srgb, var(--error) 45%, transparent);
+		border-radius: 8px;
+		background: transparent;
+		color: var(--error);
+		font: inherit;
+		font-size: 0.78rem;
+		cursor: pointer;
+	}
+
+	.issues ul {
+		margin: 0.3rem 0 0;
+		padding-left: 1rem;
+		color: var(--text-dim);
+	}
+
+	.hint {
+		margin: 0;
 	}
 
 	.overlay {
@@ -123,8 +445,24 @@
 		font-size: 0.95rem;
 	}
 
-	.overlay.error {
-		color: var(--error);
-		background: rgba(18, 21, 27, 0.9);
+	.fatal {
+		display: grid;
+		gap: 0.5rem;
+		place-items: center;
+		padding: 3rem 1rem;
+	}
+
+	@media (max-width: 46rem) {
+		.panel {
+			top: auto;
+			right: 0.75rem;
+			left: 0.75rem;
+			width: auto;
+			max-height: 32vh;
+		}
+
+		.hud {
+			max-width: 60vw;
+		}
 	}
 </style>

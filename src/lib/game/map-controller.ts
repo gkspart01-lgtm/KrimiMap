@@ -38,7 +38,7 @@ const DEFAULT_LIMITS: ZoomLimits = { minZoom: 0.15, maxZoom: 4 };
  * pixel ratio.
  */
 export class MapController {
-	private readonly map: Size;
+	private map: Size;
 	private readonly limits: ZoomLimits;
 	private readonly allowance: number;
 	private readonly onChange?: (camera: CameraState) => void;
@@ -75,6 +75,24 @@ export class MapController {
 	/** Number of pointers currently held down. */
 	get activePointers(): number {
 		return this.pointers.size;
+	}
+
+	/**
+	 * Swap the map size (a case can change its dimensions). The camera is clamped
+	 * into the new bounds instead of being re-fitted, so the user does not lose
+	 * their position when a document is replaced.
+	 */
+	setMap(size: Size): void {
+		if (size.width === this.map.width && size.height === this.map.height) return;
+		this.map = { width: size.width, height: size.height };
+		this.cameraState = clampToMap(
+			this.cameraState,
+			this.map,
+			this.viewportSize,
+			this.limits,
+			this.allowance
+		);
+		this.onChange?.(this.cameraState);
 	}
 
 	/** Frame the whole map. */

@@ -37,12 +37,14 @@ test('a one-finger drag pans the map and does not scroll the page', async ({ pag
 	if (!box) throw new Error('canvas has no box');
 	const start = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
 
+	// Drag upwards: the lower half of a phone screen is the editor panel, so a
+	// downward gesture would start on a DOM control instead of the canvas.
 	await dispatchTouch(page, 'touchStart', [{ id: 1, x: start.x, y: start.y }]);
-	await dispatchTouch(page, 'touchMove', [{ id: 1, x: start.x, y: start.y + 120 }]);
+	await dispatchTouch(page, 'touchMove', [{ id: 1, x: start.x, y: start.y - 120 }]);
 	await dispatchTouch(page, 'touchEnd', []);
 
 	const after = await readCamera(page);
-	expect(before.y - after.y).toBeCloseTo(120 / before.zoom, 0);
+	expect(after.y - before.y).toBeCloseTo(120 / before.zoom, 0);
 	expect(await page.evaluate(() => document.scrollingElement?.scrollTop ?? 0)).toBe(0);
 });
 

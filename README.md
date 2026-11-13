@@ -13,7 +13,7 @@ files plus an installable PWA, and local inference is the preferred AI mode.
 Repository content, code comments and docs are in English; the UI ships German
 and English.
 
-## Current state — Phase 1
+## Current state — Phase 2
 
 Implemented:
 
@@ -44,8 +44,17 @@ Implemented:
 - `npm run verify` as the single gate: lint, types, formatting, unit tests with
   coverage thresholds, static build, browser tests including the offline reload.
 
-Not implemented yet (next phases): IndexedDB persistence, case import/export,
-editor tools (entities, layers, timeline, undo/redo), playtest mode, AI
+- **Cases are real documents now**: a versioned `CaseDocument` (framework-free
+  rules, migration boundary, ~130 unit tests), an IndexedDB repository, and safe
+  JSON import/export (2 MiB limit, validation before storing, imported ids that
+  never overwrite an existing case).
+- **A working editor**: case list at `/cases` (create, open, import, export,
+  delete), and `/editor?id=…` with the case's own map size, its markers, click to
+  select, drag to place, edit name/kind/description, delete, validate — all
+  autosaved with a visible save state.
+
+Not implemented yet (next phases): layers and timeline events, undo/redo (the
+domain commands are pure, so it is a history on top), playtest mode, and AI
 generation inside the editor.
 
 ## Commands

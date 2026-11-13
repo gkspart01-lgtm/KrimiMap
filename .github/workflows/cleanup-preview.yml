@@ -1,0 +1,40 @@
+name: Cleanup preview
+
+# Remove the per-PR folder from `gh-pages` when the pull request closes.
+# Uses the same concurrency group as the publishing jobs so a cleanup cannot race
+# a deploy that is writing into the same branch.
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pages-publish
+  cancel-in-progress: false
+
+jobs:
+  remove:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: gh-pages
+
+      - name: Remove pr-<number>
+        env:
+          NUMBER: ${{ github.event.number }}
+        run: |
+          set -euo pipefail
+          if [ ! -d "pr-${NUMBER}" ]; then
+            echo "No preview folder for PR #${NUMBER} — nothing to do."
+            exit 0
+          fi
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm -r --quiet "pr-${NUMBER}"
+          git commit -m "chore: remove preview for PR #${NUMBER}"
+          git push

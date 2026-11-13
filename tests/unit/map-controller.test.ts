@@ -252,3 +252,35 @@ describe('MapController: change notifications', () => {
 		expect(controller.camera).toEqual(before);
 	});
 });
+
+describe('setMap', () => {
+	it('keeps the camera inside the new map and notifies once', () => {
+		const changes: CameraState[] = [];
+		const controller = new MapController({
+			map: { width: 2400, height: 1600 },
+			viewport: { width: 800, height: 600 },
+			onChange: (camera) => changes.push(camera)
+		});
+		controller.zoomBy(2);
+		const before = controller.camera;
+
+		controller.setMap({ width: 1200, height: 800 });
+		const after = controller.camera;
+
+		expect(changes.length).toBeGreaterThan(0);
+		expect(after.x).toBeLessThanOrEqual(1200);
+		expect(after.y).toBeLessThanOrEqual(800);
+		expect(after.zoom).toBeCloseTo(before.zoom, 5);
+	});
+
+	it('does nothing when the size is unchanged', () => {
+		const changes: CameraState[] = [];
+		const controller = new MapController({
+			map: { width: 2400, height: 1600 },
+			viewport: { width: 800, height: 600 },
+			onChange: (camera) => changes.push(camera)
+		});
+		controller.setMap({ width: 2400, height: 1600 });
+		expect(changes).toEqual([]);
+	});
+});

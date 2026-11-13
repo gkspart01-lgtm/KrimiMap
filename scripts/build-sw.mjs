@@ -26,8 +26,13 @@ const result = await generateSW({
 	// The site may be served from a sub-path (GitHub Pages project sites), so the
 	// precached URLs need the same prefix the pages use.
 	modifyURLPrefix: base ? { '': `${base}/` } : {},
-	navigateFallback: `${base}/index.html`,
-	navigateFallbackDenylist: [/^\/api\//, /\.json$/],
+	/**
+	 * No `navigateFallback`: Workbox maps a navigation to the precached
+	 * `<route>/index.html` itself (`directoryIndex`). A single fallback document
+	 * would serve the root shell for `/editor/`, and its relative asset URLs then
+	 * resolve below `/editor/` — every chunk 404s and the editor never boots.
+	 */
+	directoryIndex: 'index.html',
 	cleanupOutdatedCaches: true,
 	// Updates must wait for the user (see `register.ts`), but a first visit
 	// should control the page immediately so "offline ready" means something.

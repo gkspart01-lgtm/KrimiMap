@@ -37,6 +37,15 @@ Running Workbox as an explicit post-build step solves all three: the precache
 manifest is computed from the finished `build/`, and the registration is 60
 lines of code we can read.
 
+## Routing and the service worker
+
+The worker deliberately has **no** `navigateFallback`. A single fallback document
+means every deep link gets the root shell, whose relative asset URLs then resolve
+below the route (`/editor/_app/…`) — the route never boots. Workbox's
+`directoryIndex: 'index.html'` maps a navigation to the precached
+`<route>/index.html` instead, which is exactly what a prerendered static app
+needs.
+
 ## Update flow
 
 `skipWaiting: false` and `clientsClaim: true`:

@@ -21,6 +21,7 @@
 <header class="topbar">
 	<a class="brand" href={resolve('/')}>KrimiMap</a>
 	<nav>
+		<a href={resolve('cases/')}>Fälle</a>
 		<a href={resolve('editor/')}>Editor</a>
 		{#if debug()}
 			<a href={resolve('spike/webllm/')}>AI-Spike</a>
