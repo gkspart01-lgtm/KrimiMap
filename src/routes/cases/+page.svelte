@@ -13,6 +13,7 @@
 		removeCase
 	} from '#lib/state/cases.svelte';
 	import { storageEstimate } from '#lib/storage/db';
+	import { formatDateTime, t } from '#lib/i18n/index.svelte';
 
 	const store = caseStore();
 	let fileInput: HTMLInputElement;
@@ -52,17 +53,6 @@
 		if (document) exportCurrentCase();
 	}
 
-	function formatDate(iso: string): string {
-		const date = new Date(iso);
-		return date.toLocaleString('de-DE', {
-			day: '2-digit',
-			month: '2-digit',
-			year: 'numeric',
-			hour: '2-digit',
-			minute: '2-digit'
-		});
-	}
-
 	function formatSize(bytes: number): string {
 		if (!bytes) return '0 MB';
 		return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
@@ -70,20 +60,18 @@
 </script>
 
 <svelte:head>
-	<title>KrimiMap — Fälle</title>
+	<title>{t('cases.title')}</title>
 </svelte:head>
 
 <div class="page wide">
 	<header class="head">
 		<div>
-			<h1>Deine Fälle</h1>
-			<p class="muted small">
-				Alles bleibt lokal in diesem Browser. Nichts wird hochgeladen, nichts verlässt das Gerät.
-			</p>
+			<h1>{t('cases.title')}</h1>
+			<p class="muted small">{t('cases.intro')}</p>
 		</div>
 		<div class="actions">
-			<button class="primary" onclick={onCreate} disabled={busy}>Neuer Fall</button>
-			<button onclick={() => fileInput.click()} disabled={busy}>JSON importieren</button>
+			<button class="primary" onclick={onCreate} disabled={busy}>{t('cases.new')}</button>
+			<button onclick={() => fileInput.click()} disabled={busy}>{t('cases.import')}</button>
 			<input
 				bind:this={fileInput}
 				type="file"
@@ -100,11 +88,8 @@
 
 	{#if store.cases.length === 0}
 		<div class="empty">
-			<p>Noch kein Fall angelegt.</p>
-			<p class="muted small">
-				Ein Fall ist die Arbeitsfläche: Karte, Figuren, Hinweise. Leg den ersten an — speichern
-				passiert automatisch.
-			</p>
+			<p>{t('cases.empty.title')}</p>
+			<p class="muted small">{t('cases.empty.hint')}</p>
 		</div>
 	{:else}
 		<ul class="case-list" data-testid="case-list">
@@ -113,18 +98,18 @@
 					<button class="case-main" onclick={() => onOpen(entry.id)}>
 						<strong>{entry.title}</strong>
 						<span class="muted small">
-							{entry.entityCount}
-							{entry.entityCount === 1 ? 'Eintrag' : 'Einträge'} · zuletzt {formatDate(
-								entry.updatedAt
-							)}
+							{entry.entityCount === 1
+								? t('cases.count.one')
+								: t('cases.count.many', { count: entry.entityCount })}
+							· {t('cases.updated', { date: formatDateTime(entry.updatedAt) })}
 						</span>
 						{#if entry.summary}
 							<span class="muted small summary">{entry.summary}</span>
 						{/if}
 					</button>
 					<div class="row-actions">
-						<button class="ghost" onclick={() => onExport(entry.id)} title="Als JSON herunterladen"
-							>Export</button
+						<button class="ghost" onclick={() => onExport(entry.id)} title={t('cases.export.title')}
+							>{t('cases.export')}</button
 						>
 						<button class="ghost danger" onclick={() => removeCase(entry.id)} title="Fall löschen"
 							>Löschen</button
@@ -137,7 +122,7 @@
 
 	{#if usage}
 		<p class="small muted storage">
-			Belegt: {formatSize(usage.usage)} von {formatSize(usage.quota)}
+			{t('cases.storage', { used: formatSize(usage.usage), quota: formatSize(usage.quota) })}
 		</p>
 	{/if}
 </div>

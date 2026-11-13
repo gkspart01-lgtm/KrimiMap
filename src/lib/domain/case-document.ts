@@ -67,8 +67,15 @@ export type Severity = 'error' | 'warning';
 export interface CaseIssue {
 	/** JSON-ish path such as `entities[2].position.x`. */
 	path: string;
+	/**
+	 * German diagnostic text. Kept because tests, logs and the console read it;
+	 * the UI translates `code` + `params` instead when it has a translation.
+	 */
 	message: string;
 	severity: Severity;
+	/** Stable key, e.g. `entity.id.duplicate`, used for translations. */
+	code?: string;
+	params?: Record<string, string | number>;
 }
 
 export const MAP_LIMITS = { min: 400, max: 6000 } as const;
@@ -167,32 +174,52 @@ function isFiniteNumber(value: unknown): value is number {
  */
 export function validateCase(document: CaseDocument): CaseIssue[] {
 	const issues: CaseIssue[] = [];
-	const error = (path: string, message: string) =>
-		issues.push({ path, message, severity: 'error' });
-	const warn = (path: string, message: string) =>
-		issues.push({ path, message, severity: 'warning' });
+	const error = (
+		path: string,
+		message: string,
+		code?: string,
+		params?: Record<string, string | number>
+	) => issues.push({ path, message, severity: 'error', code, params });
+	const warn = (
+		path: string,
+		message: string,
+		code?: string,
+		params?: Record<string, string | number>
+	) => issues.push({ path, message, severity: 'warning', code, params });
 
 	if (document.schemaVersion !== CASE_SCHEMA_VERSION) {
-		error('schemaVersion', `erwartet ${CASE_SCHEMA_VERSION}, gefunden ${document.schemaVersion}`);
+		error(
+			'schemaVersion',
+			`erwartet ${CASE_SCHEMA_VERSION}, gefunden ${document.schemaVersion}`,
+			'schema.version',
+			{ expected: CASE_SCHEMA_VERSION, found: document.schemaVersion }
+		);
 	}
 	if (!document.id || typeof document.id !== 'string') {
-		error('id', 'Fall-ID fehlt');
+		error('id', 'Fall-ID fehlt', 'id.missing');
 	}
 	if (!document.title.trim()) {
-		error('title', 'Titel darf nicht leer sein');
+		error('title', 'Titel darf nicht leer sein', 'title.empty');
 	} else if (document.title.length > MAX_TITLE_LENGTH) {
-		error('title', `Titel ist länger als ${MAX_TITLE_LENGTH} Zeichen`);
+		error('title', `Titel ist länger als ${MAX_TITLE_LENGTH} Zeichen`, 'title.long', {
+			max: MAX_TITLE_LENGTH
+		});
 	}
 	if (document.language !== 'de' && document.language !== 'en') {
-		error('language', 'Sprache muss "de" oder "en" sein');
+		error('language', 'Sprache muss "de" oder "en" sein', 'language.invalid');
 	}
 	if (!isFiniteNumber(document.map?.width) || !isFiniteNumber(document.map?.height)) {
-		error('map', 'Kartenmaße fehlen');
+		error('map', 'Kartenmaße fehlen', 'map.missing');
 	} else {
 		for (const axis of ['width', 'height'] as const) {
 			const value = document.map[axis];
 			if (value < MAP_LIMITS.min || value > MAP_LIMITS.max) {
-				error(`map.${axis}`, `muss zwischen ${MAP_LIMITS.min} und ${MAP_LIMITS.max} liegen`);
+				error(
+					`map.${axis}`,
+					`muss zwischen ${MAP_LIMITS.min} und ${MAP_LIMITS.max} liegen`,
+					'map.range',
+					{ min: MAP_LIMITS.min, max: MAP_LIMITS.max }
+				);
 			}
 		}
 	}
@@ -201,36 +228,45 @@ export function validateCase(document: CaseDocument): CaseIssue[] {
 	document.entities?.forEach((entity, index) => {
 		const at = `entities[${index}]`;
 		if (!KEBAB.test(entity.id)) {
-			error(`${at}.id`, 'muss ein kleingeschriebener kebab-case-Identifier sein');
+			error(`${at}.id`, 'muss ein kleingeschriebener kebab-case-Identifier sein', 'entity.id');
 		}
-		if (seen.has(entity.id)) error(`${at}.id`, 'ID ist doppelt vergeben');
+		if (seen.has(entity.id)) error(`${at}.id`, 'ID ist doppelt vergeben', 'entity.id.duplicate');
 		seen.add(entity.id);
 
 		if (!ENTITY_KINDS.includes(entity.kind)) {
-			error(`${at}.kind`, `unbekannte Art "${String(entity.kind)}"`);
+			error(`${at}.kind`, `unbekannte Art "${String(entity.kind)}"`, 'entity.kind', {
+				kind: String(entity.kind)
+			});
 		}
-		if (!entity.name?.trim()) error(`${at}.name`, 'Name darf nicht leer sein');
+		if (!entity.name?.trim()) error(`${at}.name`, 'Name darf nicht leer sein', 'entity.name.empty');
 		else if (entity.name.length > MAX_NAME_LENGTH) {
-			error(`${at}.name`, `Name ist länger als ${MAX_NAME_LENGTH} Zeichen`);
+			error(`${at}.name`, `Name ist länger als ${MAX_NAME_LENGTH} Zeichen`, 'entity.name.long', {
+				max: MAX_NAME_LENGTH
+			});
 		}
 		if ((entity.description ?? '').length > MAX_DESCRIPTION_LENGTH) {
-			error(`${at}.description`, `Beschreibung ist länger als ${MAX_DESCRIPTION_LENGTH} Zeichen`);
+			error(
+				`${at}.description`,
+				`Beschreibung ist länger als ${MAX_DESCRIPTION_LENGTH} Zeichen`,
+				'entity.description.long',
+				{ max: MAX_DESCRIPTION_LENGTH }
+			);
 		}
 		if (!HEX_COLOR.test(entity.color ?? '')) {
-			error(`${at}.color`, 'Farbe muss ein Hex-Wert wie #4ec9a0 sein');
+			error(`${at}.color`, 'Farbe muss ein Hex-Wert wie #4ec9a0 sein', 'entity.color');
 		}
 		if (!isFiniteNumber(entity.position?.x) || !isFiniteNumber(entity.position?.y)) {
-			error(`${at}.position`, 'Position fehlt');
+			error(`${at}.position`, 'Position fehlt', 'entity.position.missing');
 		} else if (
 			entity.position.x < 0 ||
 			entity.position.y < 0 ||
 			entity.position.x > document.map.width ||
 			entity.position.y > document.map.height
 		) {
-			error(`${at}.position`, 'liegt außerhalb der Karte');
+			error(`${at}.position`, 'liegt außerhalb der Karte', 'entity.position.outside');
 		}
 		if (!Array.isArray(entity.relatedEntityIds)) {
-			error(`${at}.relatedEntityIds`, 'muss eine Liste sein');
+			error(`${at}.relatedEntityIds`, 'muss eine Liste sein', 'entity.related.notList');
 		}
 	});
 
@@ -238,17 +274,26 @@ export function validateCase(document: CaseDocument): CaseIssue[] {
 	document.entities?.forEach((entity, index) => {
 		for (const related of entity.relatedEntityIds ?? []) {
 			if (related === entity.id) {
-				error(`entities[${index}].relatedEntityIds`, 'darf nicht auf sich selbst zeigen');
+				error(
+					`entities[${index}].relatedEntityIds`,
+					'darf nicht auf sich selbst zeigen',
+					'entity.related.self'
+				);
 			} else if (!seen.has(related)) {
-				error(`entities[${index}].relatedEntityIds`, `unbekannte ID "${related}"`);
+				error(
+					`entities[${index}].relatedEntityIds`,
+					`unbekannte ID "${related}"`,
+					'entity.related.unknown',
+					{ id: related }
+				);
 			}
 		}
 	});
 
 	if (document.entities?.length === 0) {
-		warn('entities', 'Der Fall ist noch leer');
+		warn('entities', 'Der Fall ist noch leer', 'case.empty');
 	} else if (!document.entities?.some((entity) => entity.kind === 'clue')) {
-		warn('entities', 'Kein Hinweis im Fall — Spieler können nichts entdecken');
+		warn('entities', 'Kein Hinweis im Fall — Spieler können nichts entdecken', 'case.noClue');
 	}
 
 	return issues;

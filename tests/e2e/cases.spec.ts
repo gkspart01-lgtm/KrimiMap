@@ -18,7 +18,7 @@ test('creates a case, adds an entity and keeps it after a reload', async ({ page
 	await createCase(page);
 
 	await page.getByRole('textbox', { name: 'Titel des Falls' }).fill('Der Fall im Moor');
-	await page.getByRole('button', { name: '+ clue' }).click();
+	await page.getByRole('button', { name: '+ Hinweis' }).click();
 	await expect(page.getByTestId('entity-form')).toBeVisible();
 
 	await page.getByTestId('entity-form').getByRole('textbox').first().fill('Taschenlampe');
@@ -42,7 +42,7 @@ test('creates a case, adds an entity and keeps it after a reload', async ({ page
 test('edits survive offline', async ({ page, context }) => {
 	await createCase(page);
 	await page.getByRole('textbox', { name: 'Titel des Falls' }).fill('Offline-Fall');
-	await page.getByRole('button', { name: '+ character' }).click();
+	await page.getByRole('button', { name: '+ Figur' }).click();
 	await expect(page.getByTestId('save-state')).toHaveAttribute('data-state', 'saved', {
 		timeout: 10_000
 	});
@@ -107,4 +107,29 @@ test('deletes a case from the overview', async ({ page }) => {
 	await page.goto('/cases/');
 	await page.getByRole('button', { name: 'Löschen' }).first().click();
 	await expect(page.getByTestId('case-list')).toHaveCount(0);
+});
+
+test('switches the interface language and remembers it', async ({ page }) => {
+	await page.goto('/cases/');
+	await expect(page.getByRole('heading', { name: 'Deine Fälle' })).toBeVisible();
+
+	await page.getByRole('button', { name: 'Sprache wechseln' }).click();
+	await expect(page.getByRole('heading', { name: 'Your cases' })).toBeVisible();
+	await expect(page.getByRole('button', { name: 'New case' })).toBeVisible();
+	await expect(page.getByRole('link', { name: 'Editor' })).toBeVisible();
+	await expect(page.getByRole('link', { name: 'Cases' })).toBeVisible();
+
+	await page.reload();
+	await expect(page.getByRole('heading', { name: 'Your cases' })).toBeVisible();
+
+	// Entities and diagnostics follow the language as well.
+	await page.getByRole('button', { name: 'New case' }).click();
+	await page.waitForURL(/\/editor\//);
+	await expect(page.getByRole('button', { name: '+ Clue' })).toBeVisible();
+	await page.getByRole('button', { name: 'Toggle debug view' }).click();
+	await expect(page.getByTestId('zoom-label')).toContainText('Zoom');
+
+	// Back to German for the rest of the suite.
+	await page.getByRole('button', { name: 'Switch language' }).click();
+	await expect(page.getByRole('button', { name: '+ Hinweis' })).toBeVisible();
 });

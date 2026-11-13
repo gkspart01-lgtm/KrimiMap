@@ -1,8 +1,19 @@
 <script lang="ts">
 	import { pwa } from '#lib/pwa/state.svelte';
+	import { t } from '#lib/i18n/index.svelte';
 
 	const status = $derived(pwa().status);
 	const connection = $derived(pwa().connection);
+	const label = $derived(connection === 'offline' ? t('pill.offline') : t('pill.online'));
+	const hint = $derived(
+		connection === 'offline'
+			? status.offlineReady
+				? t('pill.offline.title')
+				: t('pill.offline.nocache')
+			: status.offlineReady
+				? t('pill.online.title')
+				: t('pill.online.nocache')
+	);
 </script>
 
 <span
@@ -12,12 +23,12 @@
 	data-testid="connection-status"
 	data-connection={connection}
 	data-offline-ready={status.offlineReady}
-	title={status.title}
+	title={hint}
 >
 	<span class="dot" aria-hidden="true"></span>
-	{status.label}
+	{label}
 	{#if status.offlineReady}
-		<span class="ready-note">· offline bereit</span>
+		<span class="ready-note">{t('pill.ready')}</span>
 	{/if}
 </span>
 

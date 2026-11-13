@@ -48,6 +48,9 @@ Implemented:
   rules, migration boundary, ~130 unit tests), an IndexedDB repository, and safe
   JSON import/export (2 MiB limit, validation before storing, imported ids that
   never overwrite an existing case).
+- **German and English**: every user-visible string lives in `src/lib/i18n`, the
+  header switches language at any time and remembers it; validation diagnostics
+  carry a `code` so the panel can translate them too.
 - **A working editor**: case list at `/cases` (create, open, import, export,
   delete), and `/editor?id=…` with the case's own map size, its markers, click to
   select, drag to place, edit name/kind/description, delete, validate — all

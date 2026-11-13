@@ -8,6 +8,7 @@
 	import type { EntityKind } from '#lib/domain/case-document';
 	import { ENTITY_KINDS, ENTITY_KIND_COLORS } from '#lib/domain/case-document';
 	import { debug } from '#lib/ui/debug.svelte';
+	import { formatNumber, t, tIssue } from '#lib/i18n/index.svelte';
 	import {
 		addEntityAtCenter,
 		caseStore,
@@ -33,13 +34,13 @@
 
 	const saveLabel = $derived(
 		store.saveState === 'saving'
-			? 'Speichert…'
+			? t('save.saving')
 			: store.saveState === 'dirty'
-				? 'Ungespeichert'
+				? t('save.dirty')
 				: store.saveState === 'error'
-					? 'Speichern fehlgeschlagen'
+					? t('save.error')
 					: store.saveState === 'saved'
-						? 'Gespeichert'
+						? t('save.saved')
 						: ''
 	);
 
@@ -54,7 +55,7 @@
 			const active = document ?? (await createCase());
 			if (cancelled) return;
 			if (!active) {
-				fatal = 'Der Fall konnte nicht geladen werden.';
+				fatal = t('editor.fatal');
 				return;
 			}
 			if (!requested) await goto(`${resolve('editor/')}?id=${active.id}`, { replaceState: true });
@@ -95,10 +96,36 @@
 		handle?.setSelected(store.selectedId);
 	});
 
+	/**
+	 * New markers land near the view centre, but never on top of an existing one:
+	 * the golden-angle spiral finds the first free spot, so repeated clicks
+	 * produce a readable cluster instead of a single unclickable stack.
+	 */
+	function freePosition(): { x: number; y: number } {
+		const centre = handle?.camera() ?? { x: 1200, y: 800, zoom: 1 };
+		const size = store.current?.map ?? { width: 2400, height: 1600 };
+		const entities = store.current?.entities ?? [];
+		const clampAxis = (value: number, max: number) => Math.min(max - 50, Math.max(50, value));
+		const isFree = (candidate: { x: number; y: number }) =>
+			!entities.some(
+				(entity) =>
+					Math.hypot(entity.position.x - candidate.x, entity.position.y - candidate.y) < 90
+			);
+
+		for (let index = 0; index < 60; index += 1) {
+			const angle = index * 2.399963;
+			const radius = 70 + 30 * Math.sqrt(index);
+			const candidate = {
+				x: clampAxis(centre.x + Math.cos(angle) * radius, size.width),
+				y: clampAxis(centre.y + Math.sin(angle) * radius, size.height)
+			};
+			if (isFree(candidate)) return candidate;
+		}
+		return { x: clampAxis(centre.x, size.width), y: clampAxis(centre.y, size.height) };
+	}
+
 	function addEntity(kind: EntityKind) {
-		const camera = handle?.camera() ?? { x: 1200, y: 800, zoom: 1 };
-		const offset = 40 + Math.round(Math.random() * 120);
-		addEntityAtCenter(kind, { x: camera.x + offset, y: camera.y + offset });
+		addEntityAtCenter(kind, freePosition());
 	}
 
 	function onKindChange(kind: EntityKind) {
@@ -120,13 +147,13 @@
 </script>
 
 <svelte:head>
-	<title>KrimiMap — Editor</title>
+	<title>{t('editor.title')}</title>
 </svelte:head>
 
 {#if fatal}
 	<div class="fatal">
 		<p>{fatal}</p>
-		<a href={resolve('cases/')}>Zur Fallliste</a>
+		<a href={resolve('cases/')}>{t('editor.fatal.back')}</a>
 	</div>
 {:else}
 	<div class="workspace">
@@ -134,11 +161,16 @@
 
 		<div class="hud" aria-hidden="true" data-testid="map-hud">
 			<strong>{store.current?.title ?? 'Karte'}</strong>
-			<span class="muted small">Ziehen = Karte verschieben · Marker ziehen = platzieren</span>
+			<span class="muted small">{t('editor.hud.hint')}</span>
 			{#if debug()}
 				<span class="small mono" data-testid="zoom-label"
-					>Zoom {(zoom * 100).toFixed(0)}% · Mitte {centre.x}/{centre.y} ·
-					{store.current?.map.width}×{store.current?.map.height}</span
+					>{t('editor.hud.debug', {
+						percent: formatNumber(zoom * 100),
+						x: formatNumber(centre.x),
+						y: formatNumber(centre.y),
+						width: store.current?.map.width ?? 0,
+						height: store.current?.map.height ?? 0
+					})}</span
 				>
 			{/if}
 		</div>
@@ -149,9 +181,9 @@
 					class="title"
 					value={store.current?.title ?? ''}
 					oninput={(event) => renameCurrentCase(event.currentTarget.value)}
-					aria-label="Titel des Falls"
+					aria-label={t('editor.title.label')}
 				/>
-				<a class="back" href={resolve('cases/')}>Fälle</a>
+				<a class="back" href={resolve('cases/')}>{t('editor.back')}</a>
 			</div>
 
 			<div
@@ -171,7 +203,7 @@
 					<button
 						class="add"
 						style="--kind-color: {ENTITY_KIND_COLORS[kind]}"
-						onclick={() => addEntity(kind)}>+ {kind}</button
+						onclick={() => addEntity(kind)}>+ {t(`kind.${kind}`)}</button
 					>
 				{/each}
 			</div>
@@ -179,25 +211,25 @@
 			{#if store.selected}
 				<div class="entity-form" data-testid="entity-form">
 					<label>
-						<span>Name</span>
+						<span>{t('editor.form.name')}</span>
 						<input
 							value={store.selected.name}
 							oninput={(event) => patchSelected({ name: event.currentTarget.value })}
 						/>
 					</label>
 					<label>
-						<span>Art</span>
+						<span>{t('editor.form.kind')}</span>
 						<select
 							value={store.selected.kind}
 							onchange={(event) => onKindChange(event.currentTarget.value as EntityKind)}
 						>
 							{#each ENTITY_KINDS as kind (kind)}
-								<option value={kind}>{kind}</option>
+								<option value={kind}>{t(`kind.${kind}`)}</option>
 							{/each}
 						</select>
 					</label>
 					<label>
-						<span>Beschreibung</span>
+						<span>{t('editor.form.description')}</span>
 						<textarea
 							rows="3"
 							value={store.selected.description}
@@ -208,20 +240,20 @@
 						x {Math.round(store.selected.position.x)} · y {Math.round(store.selected.position.y)} · id
 						<code>{store.selected.id}</code>
 					</div>
-					<button class="danger" onclick={deleteSelected}>Eintrag löschen</button>
+					<button class="danger" onclick={deleteSelected}>{t('editor.form.delete')}</button>
 				</div>
 			{:else}
 				<p class="muted small hint">
-					Kein Eintrag ausgewählt. Marker auf der Karte anklicken oder oben einen neuen anlegen.
+					{t('editor.hint.none')}
 				</p>
 			{/if}
 
 			{#if store.issues.length > 0}
 				<div class="issues" data-testid="case-issues">
-					<strong class="small">Hinweise</strong>
+					<strong class="small">{t('editor.issues')}</strong>
 					<ul class="small">
 						{#each store.issues.slice(0, 5) as issue (issue.path + issue.message)}
-							<li>{issue.path}: {issue.message}</li>
+							<li>{issue.path}: {tIssue(issue.code, issue.message, issue.params)}</li>
 						{/each}
 					</ul>
 				</div>
@@ -235,7 +267,7 @@
 		</div>
 
 		{#if !ready && !fatal}
-			<div class="overlay muted">Karte wird geladen…</div>
+			<div class="overlay muted">{t('editor.loading')}</div>
 		{/if}
 	</div>
 {/if}
@@ -343,15 +375,16 @@
 	}
 
 	.status .dot {
-		width: 0.4rem;
-		height: 0.4rem;
+		width: 0.45rem;
+		height: 0.45rem;
 		border-radius: 50%;
-		background: var(--accent);
+		background: #e8a33d;
 	}
 
-	.status[data-state='dirty'] .dot,
-	.status[data-state='saving'] .dot {
-		background: #e8a33d;
+	/* Green only when the document is really on disk; amber while a save is
+	   pending or running. */
+	.status[data-state='saved'] .dot {
+		background: #4ec9a0;
 	}
 
 	.status[data-state='error'] .dot {

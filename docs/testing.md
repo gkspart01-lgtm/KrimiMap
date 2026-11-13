@@ -77,7 +77,8 @@ and the PWA tests would fail against a perfectly good build.
   leaves the static origin.
 - **cases flow** (`cases.spec.ts`): create a case, add an entity, reload and find
   it again, edit while offline, import a version-0 draft (migrated), reject a
-  broken import with a readable message, delete a case.
+  broken import with a readable message, delete a case, and switch the UI to
+  English and back (persisted across a reload).
 - **mobile project** (Pixel 5, touch): canvas renders at the phone pixel ratio,
   one-finger drag pans without scrolling the page, two-finger pinch zooms in and
   out around the midpoint. Multi-touch goes through the DevTools protocol
