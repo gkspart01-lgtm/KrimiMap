@@ -116,6 +116,14 @@ export class MapController {
 	}
 
 	pointerDown(sample: PointerSample): void {
+		// Browsers can report the same touch twice (pointer + compatibility event,
+		// or a re-fired down). A second entry at the same spot would turn a
+		// one-finger drag into a "pinch" with zero span, which then eats the pan.
+		for (const [id, existing] of this.pointers) {
+			if (id !== sample.id && Math.hypot(existing.x - sample.x, existing.y - sample.y) < 4) {
+				return;
+			}
+		}
 		this.pointers.set(sample.id, { x: sample.x, y: sample.y });
 		this.measurePinch();
 	}

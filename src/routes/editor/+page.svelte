@@ -32,6 +32,8 @@
 	let ready = $state(false);
 	let fatal = $state<string | null>(null);
 	let zoom = $state(0);
+	/** Phones get a drawer instead of a permanent panel: the canvas needs the room. */
+	let panelOpen = $state(false);
 	let centre = $state({ x: 0, y: 0 });
 
 	const saveLabel = $derived(
@@ -111,8 +113,17 @@
 		if (handle && document) handle.setDocument(document);
 	});
 
+	// Open the drawer when the selection changes, not whenever it is closed: reading
+	// `panelOpen` here would make the effect re-run on every toggle and immediately
+	// reopen the drawer the user just closed.
+	let lastSelectedId: string | null = null;
 	$effect(() => {
-		handle?.setSelected(store.selectedId);
+		const id = store.selectedId;
+		handle?.setSelected(id);
+		if (id && id !== lastSelectedId && window.matchMedia('(max-width: 46rem)').matches) {
+			panelOpen = true;
+		}
+		lastSelectedId = id;
 	});
 
 	/**
@@ -194,7 +205,14 @@
 			{/if}
 		</div>
 
-		<aside class="panel" data-testid="editor-panel">
+		<button
+			type="button"
+			class="panel-toggle"
+			aria-expanded={panelOpen}
+			onclick={() => (panelOpen = !panelOpen)}>{t('editor.panel.toggle')}</button
+		>
+
+		<aside class="panel" class:open={panelOpen} data-testid="editor-panel">
 			<div class="panel-head">
 				<input
 					class="title"
@@ -544,13 +562,40 @@
 		padding: 3rem 1rem;
 	}
 
+	.panel-toggle {
+		display: none;
+	}
+
 	@media (max-width: 46rem) {
 		.panel {
 			top: auto;
 			right: 0.75rem;
 			left: 0.75rem;
 			width: auto;
-			max-height: 32vh;
+			max-height: 42vh;
+			/* Closed by default: a permanent sheet would eat half the canvas. */
+			transform: translateY(calc(100% + 5rem));
+			transition: transform 160ms ease;
+		}
+
+		.panel.open {
+			transform: none;
+		}
+
+		.panel-toggle {
+			position: absolute;
+			z-index: 3;
+			right: 0.75rem;
+			bottom: 4.9rem;
+			display: block;
+			padding: 0.4rem 0.7rem;
+			border: 1px solid var(--border);
+			border-radius: 999px;
+			background: rgba(18, 21, 27, 0.92);
+			color: var(--text);
+			font: inherit;
+			font-size: 0.78rem;
+			cursor: pointer;
 		}
 
 		.hud {

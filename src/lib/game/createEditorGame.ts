@@ -197,7 +197,14 @@ export function createEditorGame(parent: HTMLElement, options: Options = {}): Ed
 		private entityLayer!: Phaser.GameObjects.Container;
 		private selectionLayer!: Phaser.GameObjects.Graphics;
 		private entityObjects = new Map<string, Phaser.GameObjects.Container>();
-		private dragging: { id: string; offset: Point } | null = null;
+		private dragging: { id: string; offset: Point; start: Point } | null = null;
+		/**
+		 * A finger that lands on a marker is not a drag yet: it may become a tap
+		 * (select) or the start of a pinch. Promoting only after the finger has
+		 * travelled far enough keeps pinching from dragging entities around.
+		 */
+		private candidate: { id: string; pointerId: number; startCss: Point; offset: Point } | null =
+			null;
 		private drawnMap: { width: number; height: number } | null = null;
 		private selectedId: string | null = null;
 
@@ -486,17 +493,39 @@ export function createEditorGame(parent: HTMLElement, options: Options = {}): Ed
 
 			this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
 				const css = toCss({ x: pointer.x, y: pointer.y });
+
+				// A second finger means pinch: give both pointers to the controller and
+				// drop any pending marker gesture, so the map zooms instead of the
+				// marker sliding away.
+				if (this.candidate || this.dragging) {
+					const pending = this.candidate;
+					if (this.dragging) {
+						this.entityObjects
+							.get(this.dragging.id)
+							?.setPosition(this.dragging.start.x, this.dragging.start.y);
+						this.dragging = null;
+					}
+					this.candidate = null;
+					if (pending)
+						active.pointerDown({
+							id: pending.pointerId,
+							x: pending.startCss.x,
+							y: pending.startCss.y
+						});
+					active.pointerDown({ id: pointer.id, x: css.x, y: css.y });
+					return;
+				}
+
 				const world = toWorld(css);
 				const hit = this.entityAt(world);
 
 				if (hit) {
-					this.dragging = {
+					this.candidate = {
 						id: hit.id,
+						pointerId: pointer.id,
+						startCss: css,
 						offset: { x: world.x - hit.position.x, y: world.y - hit.position.y }
 					};
-					this.selectedId = hit.id;
-					options.onSelect?.(hit.id);
-					this.drawSelection();
 					return;
 				}
 
@@ -508,6 +537,25 @@ export function createEditorGame(parent: HTMLElement, options: Options = {}): Ed
 
 			this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
 				const css = toCss({ x: pointer.x, y: pointer.y });
+
+				// Promote a marker touch into a drag only after it clearly moved.
+				if (this.candidate && pointer.id === this.candidate.pointerId) {
+					const travelled = Math.hypot(
+						css.x - this.candidate.startCss.x,
+						css.y - this.candidate.startCss.y
+					);
+					if (travelled < 8) return;
+					const entity = caseDocument?.entities.find((item) => item.id === this.candidate?.id);
+					this.dragging = {
+						id: this.candidate.id,
+						offset: this.candidate.offset,
+						start: entity ? { ...entity.position } : { x: 0, y: 0 }
+					};
+					this.selectedId = this.candidate.id;
+					options.onSelect?.(this.candidate.id);
+					this.candidate = null;
+					this.drawSelection();
+				}
 
 				if (this.dragging) {
 					const world = toWorld(css);
@@ -525,6 +573,14 @@ export function createEditorGame(parent: HTMLElement, options: Options = {}): Ed
 			// A release outside the canvas belongs to a specific pointer, so it must
 			// not clear the other fingers of a running pinch.
 			const release = (pointer: Phaser.Input.Pointer) => {
+				// A finger that never travelled: that was a tap, so select the marker.
+				if (this.candidate && pointer.id === this.candidate.pointerId) {
+					this.selectedId = this.candidate.id;
+					options.onSelect?.(this.candidate.id);
+					this.candidate = null;
+					this.drawSelection();
+					return;
+				}
 				if (this.dragging) {
 					const container = this.entityObjects.get(this.dragging.id);
 					if (container) {

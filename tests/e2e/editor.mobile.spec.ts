@@ -123,3 +123,51 @@ test('pinching back together zooms out again', async ({ page }) => {
 	const after = await readCamera(page);
 	expect(after.zoom).toBeLessThan(before.zoom);
 });
+
+test('pinching over a marker zooms instead of dragging the marker', async ({ page }) => {
+	await page.goto('/editor/');
+	await waitForMap(page);
+
+	// A marker in the middle of the view; the panel shows its coordinates.
+	await page.getByRole('button', { name: '+ Hinweis' }).click();
+	await expect(page.getByTestId('entity-form')).toBeVisible();
+	const coords = page.getByTestId('entity-form').locator('.coords');
+	const before = ((await coords.textContent()) ?? '').trim();
+	const match = /x (\d+) · y (\d+)/.exec(before);
+	if (!match) throw new Error(`unexpected coords: ${before}`);
+	const entity = { x: Number(match[1]), y: Number(match[2]) };
+
+	// Close the drawer so both fingers land on the canvas.
+	await page.getByRole('button', { name: 'Eigenschaften' }).click();
+
+	const cameraBefore = await readCamera(page);
+	const box = await page.locator('canvas').boundingBox();
+	if (!box) throw new Error('canvas has no box');
+	const view = { width: box.width, height: box.height };
+	// Where the marker actually is on screen — the finger has to land on it, not
+	// merely near the view centre.
+	const marker = {
+		x: box.x + view.width / 2 + (entity.x - cameraBefore.x) * cameraBefore.zoom,
+		y: box.y + view.height / 2 + (entity.y - cameraBefore.y) * cameraBefore.zoom
+	};
+	const spread = 30;
+
+	// Finger 1 on the marker, finger 2 beside it, then spread: a pinch, not a drag.
+	await dispatchTouch(page, 'touchStart', [
+		{ id: 1, x: marker.x, y: marker.y },
+		{ id: 2, x: marker.x + spread * 2, y: marker.y }
+	]);
+	for (const step of [1, 2, 3]) {
+		await dispatchTouch(page, 'touchMove', [
+			{ id: 1, x: marker.x - spread * step * 0.5, y: marker.y },
+			{ id: 2, x: marker.x + spread * 2 + spread * step * 0.5, y: marker.y }
+		]);
+	}
+	await dispatchTouch(page, 'touchEnd', []);
+
+	const cameraAfter = await readCamera(page);
+	expect(cameraAfter.zoom).toBeGreaterThan(cameraBefore.zoom);
+
+	await page.getByRole('button', { name: 'Eigenschaften' }).click();
+	await expect(coords).toHaveText(before);
+});
