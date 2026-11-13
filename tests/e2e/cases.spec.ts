@@ -12,6 +12,9 @@ async function createCase(page: Page): Promise<void> {
 	await page.getByRole('button', { name: 'Neuer Fall' }).click();
 	await page.waitForURL(/\/editor\/\?id=/);
 	await waitForMap(page);
+	// The panel proves the editor hydrated and the store is wired up.
+	await expect(page.getByTestId('editor-panel')).toBeVisible();
+	await expect(page.getByTestId('save-state')).toBeVisible();
 }
 
 test('creates a case, adds an entity and keeps it after a reload', async ({ page }) => {
@@ -60,6 +63,9 @@ test('edits survive offline', async ({ page, context }) => {
 	await page.getByTestId('case-list').getByRole('button').first().click();
 	await page.waitForURL(/\/editor\/\?id=/);
 	await waitForMap(page);
+	// The panel proves the editor hydrated and the store is wired up.
+	await expect(page.getByTestId('editor-panel')).toBeVisible();
+	await expect(page.getByTestId('save-state')).toBeVisible();
 });
 
 test('imports a version-0 draft and migrates it', async ({ page }) => {

@@ -106,7 +106,9 @@ function scheduleSave(): void {
 
 /** Apply a domain command, remember the previous state and queue the save. */
 function apply(mutator: (document: CaseDocument) => CaseDocument): void {
-	if (!current || !history) return;
+	if (!current) return;
+	// Defensive: a document without history would silently drop the edit.
+	history ??= createHistory(current);
 	const next = mutator(current);
 	if (next === current) return;
 	history = pushHistory(history, next);

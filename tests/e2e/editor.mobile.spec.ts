@@ -18,13 +18,22 @@ test('renders the canvas at the phone pixel ratio', async ({ page }) => {
 		const rect = canvas.getBoundingClientRect();
 		return {
 			backingWidth: canvas.width,
+			backingHeight: canvas.height,
 			cssWidth: rect.width,
+			cssHeight: rect.height,
 			dpr: window.devicePixelRatio
 		};
 	});
 
 	expect(sizes.dpr).toBeGreaterThan(1);
-	expect(sizes.backingWidth).toBeCloseTo(sizes.cssWidth * Math.min(sizes.dpr, 3), 0);
+	// 1 px of rounding slack: at 3× the browser can land exactly on .5, and
+	// `toBeCloseTo(…, 0)` would then fail for a perfectly correct canvas.
+	expect(
+		Math.abs(sizes.backingWidth - sizes.cssWidth * Math.min(sizes.dpr, 3))
+	).toBeLessThanOrEqual(1);
+	expect(
+		Math.abs(sizes.backingHeight - sizes.cssHeight * Math.min(sizes.dpr, 3))
+	).toBeLessThanOrEqual(1);
 });
 
 test('a one-finger drag pans the map and does not scroll the page', async ({ page }) => {
