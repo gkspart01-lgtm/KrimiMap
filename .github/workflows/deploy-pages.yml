@@ -32,6 +32,7 @@ jobs:
       - name: Build for the project sub-path
         env:
           PUBLIC_BASE_PATH: /${{ github.event.repository.name }}
+          VITE_BUILD_INFO: main @ ${{ github.sha }}
         run: npm run build
 
       - name: Publish to gh-pages (root)
