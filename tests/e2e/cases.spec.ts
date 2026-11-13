@@ -181,6 +181,11 @@ test('keyboard shortcut undoes the last edit', async ({ page }) => {
 	// belongs to the field itself.
 	await addEntity(page, '+ Objekt');
 
+	// Click somewhere empty on the canvas: that clears the selection without
+	// touching the document, and it puts focus outside any text field (inside one,
+	// Ctrl+Z belongs to the field).
+	await page.locator('canvas').click({ position: { x: 30, y: 30 } });
+
 	await page.keyboard.press('Control+z');
 	await expect(page.getByTestId('entity-form')).toHaveCount(0);
 });
