@@ -82,20 +82,6 @@ export function createEditorGame(parent: HTMLElement, options: Options = {}): Ed
 		height: caseDocument?.map.height ?? 1600
 	});
 
-	/**
-	 * Phaser reports pointer coordinates in canvas pixels (CSS size × device
-	 * ratio), while the camera maths happens in CSS pixels. Normalising through
-	 * the actual canvas size keeps a drag exactly under the finger even if the
-	 * canvas ends up displayed at a different size than requested.
-	 */
-	const toCss = (point: Point): Point => {
-		const width = game?.scale?.width ?? 0;
-		const height = game?.scale?.height ?? 0;
-		const view = viewport();
-		if (!width || !height) return point;
-		return { x: (point.x / width) * view.width, y: (point.y / height) * view.height };
-	};
-
 	const applyToScene = (camera: CameraState) => {
 		const cam = game?.scene?.getScene('map')?.cameras?.main;
 		if (!cam) return;
@@ -104,10 +90,22 @@ export function createEditorGame(parent: HTMLElement, options: Options = {}): Ed
 	};
 
 	/** Mirror the camera into the DOM: readable for debugging and for tests. */
+	let lastPublished: CameraState | null = null;
 	const publish = (camera: CameraState) => {
 		parent.dataset.zoom = camera.zoom.toFixed(4);
 		parent.dataset.cameraX = camera.x.toFixed(2);
 		parent.dataset.cameraY = camera.y.toFixed(2);
+		// Notify on real change only: every call also runs a Svelte update, and a
+		// phone cannot afford that per pointer event.
+		if (
+			lastPublished &&
+			Math.abs(lastPublished.x - camera.x) < 0.5 &&
+			Math.abs(lastPublished.y - camera.y) < 0.5 &&
+			Math.abs(lastPublished.zoom - camera.zoom) < 0.002
+		) {
+			return;
+		}
+		lastPublished = camera;
 		options.onCamera?.(camera);
 	};
 
@@ -488,15 +486,31 @@ export function createEditorGame(parent: HTMLElement, options: Options = {}): Ed
 			return best;
 		}
 
+		/**
+		 * Input comes straight from DOM pointer events, not from Phaser.
+		 *
+		 * Phaser's touch manager batches touches per frame and reports positions in
+		 * its own coordinate space, which on a real phone did not match CSS pixels —
+		 * the map then moved slower than the finger. `clientX/clientY` minus the
+		 * canvas rect are CSS pixels on every device, and pointer events arrive per
+		 * event instead of per frame, so a drag tracks exactly.
+		 */
 		private bindInput() {
+			const canvas = this.game.canvas;
+			if (!canvas) return;
 			const active = ensureController();
 
-			this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-				const css = toCss({ x: pointer.x, y: pointer.y });
+			const css = (event: PointerEvent): Point => {
+				const rect = canvas.getBoundingClientRect();
+				return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+			};
 
-				// A second finger means pinch: give both pointers to the controller and
-				// drop any pending marker gesture, so the map zooms instead of the
-				// marker sliding away.
+			const onPointerDown = (event: PointerEvent) => {
+				event.preventDefault();
+				const point = css(event);
+
+				// A second finger means pinch: hand both pointers to the controller and
+				// drop any pending marker gesture, so the map zooms and the marker stays.
 				if (this.candidate || this.dragging) {
 					const pending = this.candidate;
 					if (this.dragging) {
@@ -512,18 +526,18 @@ export function createEditorGame(parent: HTMLElement, options: Options = {}): Ed
 							x: pending.startCss.x,
 							y: pending.startCss.y
 						});
-					active.pointerDown({ id: pointer.id, x: css.x, y: css.y });
+					active.pointerDown({ id: event.pointerId, x: point.x, y: point.y });
 					return;
 				}
 
-				const world = toWorld(css);
+				const world = toWorld(point);
 				const hit = this.entityAt(world);
 
 				if (hit) {
 					this.candidate = {
 						id: hit.id,
-						pointerId: pointer.id,
-						startCss: css,
+						pointerId: event.pointerId,
+						startCss: point,
 						offset: { x: world.x - hit.position.x, y: world.y - hit.position.y }
 					};
 					return;
@@ -532,17 +546,17 @@ export function createEditorGame(parent: HTMLElement, options: Options = {}): Ed
 				this.selectedId = null;
 				options.onSelect?.(null);
 				this.drawSelection();
-				active.pointerDown({ id: pointer.id, x: css.x, y: css.y });
-			});
+				active.pointerDown({ id: event.pointerId, x: point.x, y: point.y });
+			};
 
-			this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
-				const css = toCss({ x: pointer.x, y: pointer.y });
+			const onPointerMove = (event: PointerEvent) => {
+				const point = css(event);
 
 				// Promote a marker touch into a drag only after it clearly moved.
-				if (this.candidate && pointer.id === this.candidate.pointerId) {
+				if (this.candidate && event.pointerId === this.candidate.pointerId) {
 					const travelled = Math.hypot(
-						css.x - this.candidate.startCss.x,
-						css.y - this.candidate.startCss.y
+						point.x - this.candidate.startCss.x,
+						point.y - this.candidate.startCss.y
 					);
 					if (travelled < 8) return;
 					const entity = caseDocument?.entities.find((item) => item.id === this.candidate?.id);
@@ -558,7 +572,7 @@ export function createEditorGame(parent: HTMLElement, options: Options = {}): Ed
 				}
 
 				if (this.dragging) {
-					const world = toWorld(css);
+					const world = toWorld(point);
 					const size = mapSize();
 					const x = Phaser.Math.Clamp(world.x - this.dragging.offset.x, 0, size.width);
 					const y = Phaser.Math.Clamp(world.y - this.dragging.offset.y, 0, size.height);
@@ -567,14 +581,12 @@ export function createEditorGame(parent: HTMLElement, options: Options = {}): Ed
 					return;
 				}
 
-				active.pointerMove({ id: pointer.id, x: css.x, y: css.y });
-			});
+				active.pointerMove({ id: event.pointerId, x: point.x, y: point.y });
+			};
 
-			// A release outside the canvas belongs to a specific pointer, so it must
-			// not clear the other fingers of a running pinch.
-			const release = (pointer: Phaser.Input.Pointer) => {
-				// A finger that never travelled: that was a tap, so select the marker.
-				if (this.candidate && pointer.id === this.candidate.pointerId) {
+			const onPointerUp = (event: PointerEvent) => {
+				// A finger that never travelled was a tap: select the marker.
+				if (this.candidate && event.pointerId === this.candidate.pointerId) {
 					this.selectedId = this.candidate.id;
 					options.onSelect?.(this.candidate.id);
 					this.candidate = null;
@@ -589,17 +601,39 @@ export function createEditorGame(parent: HTMLElement, options: Options = {}): Ed
 					this.dragging = null;
 					return;
 				}
-				active.pointerUp(pointer.id);
+				active.pointerUp(event.pointerId);
 			};
-			this.input.on('pointerup', release);
-			this.input.on('pointerupoutside', release);
 
-			this.input.on(
+			const onPointerCancel = (event: PointerEvent) => {
+				this.candidate = null;
+				this.dragging = null;
+				active.releaseAll();
+				void event;
+			};
+
+			canvas.addEventListener('pointerdown', onPointerDown);
+			canvas.addEventListener('pointermove', onPointerMove);
+			canvas.addEventListener('pointerup', onPointerUp);
+			canvas.addEventListener('pointercancel', onPointerCancel);
+			canvas.addEventListener('pointerleave', onPointerUp);
+
+			canvas.addEventListener(
 				'wheel',
-				(pointer: Phaser.Input.Pointer, _over: unknown, _dx: number, dy: number) => {
-					active.wheel(toCss({ x: pointer.x, y: pointer.y }), dy);
-				}
+				(event: WheelEvent) => {
+					event.preventDefault();
+					const rect = canvas.getBoundingClientRect();
+					active.wheel({ x: event.clientX - rect.left, y: event.clientY - rect.top }, event.deltaY);
+				},
+				{ passive: false }
 			);
+
+			this.events.once('shutdown', () => {
+				canvas.removeEventListener('pointerdown', onPointerDown);
+				canvas.removeEventListener('pointermove', onPointerMove);
+				canvas.removeEventListener('pointerup', onPointerUp);
+				canvas.removeEventListener('pointercancel', onPointerCancel);
+				canvas.removeEventListener('pointerleave', onPointerUp);
+			});
 		}
 	}
 

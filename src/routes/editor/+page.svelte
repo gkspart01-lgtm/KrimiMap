@@ -87,6 +87,9 @@
 			handle = createEditorGame(host, {
 				document: active,
 				onCamera: (camera) => {
+					// The numbers are only rendered in debug mode; updating them
+					// unconditionally would re-render the panel on every pointer move.
+					if (!debug()) return;
 					zoom = camera.zoom;
 					centre = { x: Math.round(camera.x), y: Math.round(camera.y) };
 				},
