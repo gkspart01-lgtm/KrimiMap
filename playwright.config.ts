@@ -32,8 +32,14 @@ export default defineConfig({
 			use: { ...devices['Pixel 5'] }
 		}
 	],
+	/**
+	 * Serving only — no rebuild. `npm run verify` builds once and then runs this
+	 * suite; letting the web server build again made two `vite build` runs write
+	 * into the same `build/` while tests were reading it, which produced
+	 * "canvas never appears" failures that had nothing to do with the code.
+	 */
 	webServer: {
-		command: 'npm run build && npm run preview',
+		command: 'npm run preview',
 		url: 'http://127.0.0.1:4173',
 		reuseExistingServer: !process.env.CI,
 		timeout: 180_000

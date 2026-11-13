@@ -1,0 +1,54 @@
+name: Preview Pages
+
+# Every pull request gets its own static build below
+# https://<owner>.github.io/<repo>/pr-<number>/ so the branch can be tested in a
+# real browser (WebGPU, PWA, touch) without touching production.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: preview-${{ github.event.number }}
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build for the preview sub-path
+        env:
+          PUBLIC_BASE_PATH: /${{ github.event.repository.name }}/pr-${{ github.event.number }}
+          VITE_BUILD_INFO: PR #${{ github.event.number }} @ ${{ github.event.pull_request.head.sha }}
+        run: npm run build
+
+      - name: Publish preview
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./build
+          destination_dir: pr-${{ github.event.number }}
+          keep_files: true
+          commit_message: 'preview: PR #${{ github.event.number }} @ ${{ github.event.pull_request.head.sha }}'
+
+      - name: Comment the preview URL on the pull request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/pr-${{ github.event.number }}/
+          SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          body=$(printf '**Preview für diesen PR:** %s\n\nGebaut aus `%s`. Produktion (%s) bleibt der Stand von `main`.' "$URL" "${SHA:0:7}" "https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/")
+          gh pr comment "${{ github.event.number }}" --body "$body" --edit-last --create-if-none
