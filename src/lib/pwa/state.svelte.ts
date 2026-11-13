@@ -26,7 +26,14 @@ let state = $state<PwaState>(initialPwaState);
 let connection = $state<Connection>('online');
 let controlled = $state(false);
 let canInstall = $state(false);
+let installDismissed = $state(false);
 let started = false;
+
+/**
+ * Once the install hint is dismissed, keep it dismissed: a banner that comes back
+ * on every visit is the fastest way to make an app feel like nagware.
+ */
+const INSTALL_DISMISSED_KEY = 'krimimap.install-dismissed';
 
 let worker: ServiceWorkerHandle | null = null;
 let installEvent: BeforeInstallPromptEvent | null = null;
@@ -42,6 +49,12 @@ export function startPwa(): void {
 
 	connection = navigator.onLine ? 'online' : 'offline';
 	controlled = Boolean(navigator.serviceWorker?.controller);
+	try {
+		installDismissed = localStorage.getItem(INSTALL_DISMISSED_KEY) === '1';
+	} catch {
+		// Storage disabled (private mode): show the hint, it simply cannot be
+		// remembered across visits.
+	}
 
 	window.addEventListener('online', () => {
 		connection = 'online';
@@ -58,6 +71,7 @@ export function startPwa(): void {
 		// Keep the event so a button can trigger the browser's own prompt later;
 		// firing it during page load is what gets install prompts suppressed.
 		event.preventDefault();
+		if (installDismissed) return;
 		installEvent = event as BeforeInstallPromptEvent;
 		canInstall = true;
 	});
@@ -92,7 +106,7 @@ export function pwa() {
 			return connection;
 		},
 		get canInstall() {
-			return canInstall;
+			return canInstall && !installDismissed;
 		},
 		get status() {
 			return describeConnection(connection, controlled);
@@ -116,4 +130,16 @@ export async function promptInstall(): Promise<void> {
 	await installEvent.userChoice;
 	installEvent = null;
 	canInstall = false;
+}
+
+/** Hide the install hint for good. */
+export function dismissInstall(): void {
+	installEvent = null;
+	canInstall = false;
+	installDismissed = true;
+	try {
+		localStorage.setItem(INSTALL_DISMISSED_KEY, '1');
+	} catch {
+		/* ignore */
+	}
 }

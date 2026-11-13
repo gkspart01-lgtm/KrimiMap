@@ -1,47 +1,46 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import { debug } from '#lib/ui/debug.svelte';
 
 	const buildInfo = import.meta.env.VITE_BUILD_INFO;
 </script>
 
 <svelte:head>
-	<title>KrimiMap — Phase 0</title>
+	<title>KrimiMap — Editor für Detektivfälle</title>
 </svelte:head>
 
 <div class="page">
 	<h1>KrimiMap</h1>
 	<p class="muted">
-		Browser-basiertes Detektivspiel mit Level-Editor. Dieser Stand ist <strong>Phase 0</strong>: das
-		statische Grundgerüst, der Kartenbereich und der WebLLM-Machbarkeitstest. Fallinhalte,
-		Speicherung und Editor-Werkzeuge folgen in den nächsten Phasen.
+		Baue Detektivfälle direkt im Browser: Karte, Figuren, Hinweise. Alles bleibt auf deinem Gerät —
+		kein Konto, kein Server, und nach dem ersten Besuch funktioniert der Editor auch offline.
 	</p>
-
-	<div class="panel">
-		<h2>Was hier schon läuft</h2>
-		<ul>
-			<li>SvelteKit als reine statische Seite (kein Server, keine API-Aufrufe an KrimiMap).</li>
-			<li>Phaser-Karte mit Ziehen, Mausrad-Zoom und Pinch-Zoom.</li>
-			<li>
-				WebLLM-Spike: lokales Modell per WebGPU laden, Fallentwurf generieren, Messwerte erfassen.
-			</li>
-			<li>Framework-freier <code>CaseDocument</code>-Entwurf mit Validierung und Unit-Tests.</li>
-		</ul>
-	</div>
 
 	<div class="row">
 		<a href={resolve('editor/')}><button class="primary">Karte öffnen</button></a>
-		<a href={resolve('spike/webllm/')}><button>WebLLM-Spike starten</button></a>
 	</div>
 
-	<h2>Hinweis zur Vorschau</h2>
-	<p class="small muted">
-		Diese Seite ist ein Preview-Build aus einem Pull Request, veröffentlicht über GitHub Pages.
-		WebGPU funktioniert nur in einem aktuellen Chrome/Edge (Desktop oder Android) oder in Safari ab
-		Version 26; Firefox braucht noch ein Flag. Auf einem iPhone ohne WebGPU zeigt der Spike das
-		sauber als „nicht verfügbar" an, statt abzustürzen.
-	</p>
+	<div class="panel">
+		<h2>Was jetzt schon geht</h2>
+		<ul>
+			<li>Karte mit Ziehen, Mausrad-Zoom und Zwei-Finger-Zoom.</li>
+			<li>Als App installierbar und offline nutzbar.</li>
+			<li>Fälle anlegen, Figuren und Hinweise setzen, lokal speichern — kommt als Nächstes.</li>
+		</ul>
+	</div>
 
-	{#if buildInfo}
-		<p class="small muted">Build: <code>{buildInfo}</code></p>
+	{#if debug()}
+		<div class="panel debug-panel" data-testid="debug-panel">
+			<h2>Technische Details</h2>
+			<ul>
+				<li>SvelteKit als reine statische Seite, kein Server, keine API-Aufrufe an KrimiMap.</li>
+				<li>Phaser-Karte mit framework-freiem Kamera-Controller und Unit-Tests.</li>
+				<li><a href={resolve('spike/webllm/')}>WebLLM-Spike</a> — lokales Modell per WebGPU.</li>
+				<li>WebGPU braucht aktuelles Chrome/Edge (Desktop oder Android) oder Safari ab 26.</li>
+			</ul>
+			{#if buildInfo}
+				<p class="small muted">Build: <code data-testid="build-info">{buildInfo}</code></p>
+			{/if}
+		</div>
 	{/if}
 </div>

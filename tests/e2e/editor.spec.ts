@@ -1,11 +1,9 @@
 import { expect, test, type Page } from '@playwright/test';
-import { collectProblems, readCamera, waitForMap } from './helpers';
+import { clickRepeatedly, collectProblems, readCamera, waitForMap } from './helpers';
 
 /** Zoom in until the map is larger than the viewport, so panning has room. */
 async function zoomInUntilPannable(page: Page, clicks = 4) {
-	for (let i = 0; i < clicks; i++) {
-		await page.getByRole('button', { name: 'Hineinzoomen' }).click();
-	}
+	await clickRepeatedly(page, 'Hineinzoomen', clicks);
 }
 
 test('canvas fills its container at device resolution', async ({ page }) => {
@@ -54,6 +52,10 @@ test('dragging the map follows the pointer exactly', async ({ page }) => {
 });
 
 test('the zoom buttons scale by 1.25 per step and stay inside the limits', async ({ page }) => {
+	// ~28 clicks, each redrawing a WebGL canvas: under software rendering in CI
+	// that is slower than the default budget, and the assertion is about limits,
+	// not about speed.
+	test.setTimeout(90_000);
 	await page.goto('/editor/');
 	const initial = await waitForMap(page);
 
@@ -63,14 +65,10 @@ test('the zoom buttons scale by 1.25 per step and stay inside the limits', async
 	await page.getByRole('button', { name: 'Hineinzoomen' }).click();
 	await expect.poll(async () => (await readCamera(page)).zoom / initial.zoom).toBeCloseTo(1.25, 3);
 
-	for (let i = 0; i < 12; i++) {
-		await page.getByRole('button', { name: 'Hineinzoomen' }).click();
-	}
+	await clickRepeatedly(page, 'Hineinzoomen', 10);
 	await expect.poll(async () => (await readCamera(page)).zoom).toBeLessThanOrEqual(4.0001);
 
-	for (let i = 0; i < 25; i++) {
-		await page.getByRole('button', { name: 'Herauszoomen' }).click();
-	}
+	await clickRepeatedly(page, 'Herauszoomen', 17);
 	await expect.poll(async () => (await readCamera(page)).zoom).toBeGreaterThanOrEqual(0.1499);
 });
 

@@ -35,6 +35,12 @@ Implemented:
   under their fingers, and a pill in the header shows online/offline plus
   whether the cache is armed. Details and the trade-offs:
   [`docs/pwa.md`](docs/pwa.md).
+- **A UI for humans first**: camera numbers, the AI spike and the build stamp
+  are behind a debug switch (gear in the header, or `?debug=1`, remembered
+  locally). The placeholder map is drawn as a cartographer's board — gradient
+  backdrop, two grid levels, frame with corner ticks, edge coordinates, marker
+  glow and plated labels — all generated at boot, so there are no image assets to
+  ship or license. The install hint can be dismissed and stays dismissed.
 - `npm run verify` as the single gate: lint, types, formatting, unit tests with
   coverage thresholds, static build, browser tests including the offline reload.
 

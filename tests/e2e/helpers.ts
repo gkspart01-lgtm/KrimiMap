@@ -75,3 +75,23 @@ export function collectProblems(page: Page): string[] {
 	});
 	return problems;
 }
+
+/**
+ * Click a button N times through the mouse at the button's own centre.
+ *
+ * Playwright's `locator.click()` re-checks actionability (stable box, two
+ * animation frames) on every call. On a canvas page under software rendering a
+ * frame can take ~0.9 s, so a 25-click loop spends the whole test budget waiting
+ * for frames it does not care about. Dispatching real mouse events at the same
+ * point still exercises the button, just without the per-click wait.
+ */
+export async function clickRepeatedly(page: Page, name: string, times: number): Promise<void> {
+	const button = page.getByRole('button', { name });
+	const box = await button.boundingBox();
+	if (!box) throw new Error(`button "${name}" has no box`);
+	const x = box.x + box.width / 2;
+	const y = box.y + box.height / 2;
+	for (let i = 0; i < times; i += 1) {
+		await page.mouse.click(x, y);
+	}
+}

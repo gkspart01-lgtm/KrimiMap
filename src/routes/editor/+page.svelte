@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import type { EditorGameHandle } from '#lib/game/createEditorGame';
+	import { debug } from '#lib/ui/debug.svelte';
 
 	let host: HTMLDivElement;
 	let handle: EditorGameHandle | null = null;
@@ -44,11 +45,13 @@
 	<div class="canvas" bind:this={host} data-testid="map"></div>
 
 	<div class="hud" aria-hidden="true">
-		<strong>Editor</strong>
+		<strong>Karte</strong>
 		<span class="muted small">Ziehen = verschieben · Mausrad / zwei Finger = zoomen</span>
-		<span class="small" data-testid="zoom-label"
-			>Zoom {(zoom * 100).toFixed(0)}% · Mitte {centre.x}/{centre.y}</span
-		>
+		{#if debug()}
+			<span class="small mono" data-testid="zoom-label"
+				>Zoom {(zoom * 100).toFixed(0)}% · Mitte {centre.x}/{centre.y}</span
+			>
+		{/if}
 	</div>
 
 	{#if !ready && !error}
