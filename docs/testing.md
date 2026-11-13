@@ -6,17 +6,20 @@ browser?_ (end-to-end). Type checking and linting guard the code in between.
 
 ## Gates
 
-| Gate     | Command                 | Catches                                                                                                       |
-| -------- | ----------------------- | ------------------------------------------------------------------------------------------------------------- |
-| Lint     | `npm run lint`          | unused code, `any`, sloppy equality, leftover `console`, Svelte-specific mistakes                             |
-| Types    | `npm run check`         | type errors, wrong SvelteKit APIs, broken `#lib` imports, formatting drift (Prettier)                         |
-| Unit     | `npm test`              | camera maths, gesture logic, case-draft contract and repair                                                   |
-| Coverage | `npm run test:coverage` | unit-test gaps in the framework-free modules (thresholds below)                                               |
-| Build    | `npm run build`         | static output breaks, prerender errors, base-path handling                                                    |
-| Browser  | `npm run test:e2e`      | canvas boot, exact drag/pinch behaviour, DPR rendering, navigation, WebGPU fallback, same-origin-only traffic |
+| Gate     | Command                 | Catches                                                                                                                       |
+| -------- | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| Lint     | `npm run lint`          | unused code, `any`, sloppy equality, leftover `console`, Svelte-specific mistakes                                             |
+| Types    | `npm run check`         | type errors, wrong SvelteKit APIs, broken `#lib` imports, formatting drift (Prettier)                                         |
+| Unit     | `npm test`              | camera maths, gesture logic, case-draft contract and repair                                                                   |
+| Coverage | `npm run test:coverage` | unit-test gaps in the framework-free modules (thresholds below)                                                               |
+| Build    | `npm run build`         | static output breaks, prerender errors, base-path handling                                                                    |
+| Browser  | `npm run test:e2e`      | canvas boot, exact drag/pinch behaviour, DPR rendering, navigation, WebGPU fallback, offline reload, same-origin-only traffic |
 
-`npm run verify:fast` runs lint → types → unit+coverage → build.
-`npm run verify` additionally runs the Playwright suite. Both are what CI runs.
+`npm run verify:fast` runs lint → types → unit+coverage.
+`npm run verify` adds the browser suite, which builds once and then serves that
+build (`npm run test:e2e` = `npm run build && playwright test`). Build exactly
+once per run: two `vite build` processes writing into `build/` while tests read
+it produce failures that look like rendering bugs.
 
 ## Unit tests (Vitest)
 
@@ -35,18 +38,26 @@ browser?_ (end-to-end). Type checking and linting guard the code in between.
   devices (capitalised ids, repeated ids, dangling references).
 - `spike-attempts.test.ts` — retry loop with a fake engine, request shape per
   structured mode, "schema violations are not accepted".
+- `pwa-status.test.ts` — the offline/update notice state machine: a pending
+  update survives an "offline ready" event, dismissal resets, "offline ready" is
+  only claimed when a worker controls the page.
 
 Coverage is measured for the framework-free modules only
 (`src/lib/game/camera.ts`, `src/lib/game/map-controller.ts`,
-`src/lib/ai/contracts/case-draft.ts`) with thresholds of 95 % statements/lines/
-functions and 85 % branches. Browser adapters (`createEditorGame`, the WebLLM
-runtime) cannot run in Node and are covered by the browser suite instead — do
-not lower the thresholds to make them pass; add a test or move the logic into a
-testable module.
+`src/lib/ai/contracts/case-draft.ts`, `src/lib/pwa/status.ts`) with thresholds of
+95 % statements/lines/ functions and 85 % branches. Browser adapters
+(`createEditorGame`, the WebLLM runtime, the service-worker registration) cannot
+run in Node and are covered by the browser suite instead — do not lower the
+thresholds to make them pass; add a test or move the logic into a testable
+module.
 
 ## Browser tests (Playwright)
 
-`tests/e2e/` runs against the production build (`vite build` + `vite preview`).
+`tests/e2e/` runs against the production build (`vite build` + the static server
+in `scripts/serve-static.mjs`). `vite preview` cannot be used: in a SvelteKit
+project it serves `.svelte-kit/output/client`, so the service worker and the
+Workbox runtime — which only exist in the adapter output `build/` — return 404
+and the PWA tests would fail against a perfectly good build.
 
 - **desktop project** (1280×800, mouse): canvas fills its container at device
   resolution, a drag moves the map by exactly the pointer distance, wheel zoom
@@ -104,7 +115,10 @@ and `XDG_DATA_DIRS`. It is a local escape hatch, not part of CI.
   measurement (`docs/spike-webllm.md`).
 - Safari/iOS and Firefox are not in the matrix. They need a real device or a
   BrowserStack-style service; the plan's device matrix decision is still open.
-- Offline/PWA behaviour cannot be tested yet because the service worker is not
-  implemented (Phase 1 of the plan).
+- Offline coverage is Chromium-only and covers the shell, the landing page and
+  the editor. It does not prove installation on iOS (no `beforeinstallprompt`),
+  storage quotas, or eviction under pressure.
+- The WebLLM spike route is excluded from the precache (6 MB runtime), so it is
+  online-only; the offline test asserts the editor, not that page.
 - No visual regression snapshots: canvas screenshots differ per driver and would
   be noise until the map rendering is stable.

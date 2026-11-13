@@ -10,17 +10,18 @@
 	},
 	"scripts": {
 		"dev": "vite dev",
-		"build": "vite build",
-		"preview": "vite preview --host 127.0.0.1 --port 4173 --strictPort",
+		"build": "vite build && node scripts/build-sw.mjs",
+		"preview": "node scripts/serve-static.mjs --dir build --port 4173 --host 127.0.0.1",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json && prettier --check .",
 		"format": "prettier --write .",
 		"test": "vitest run",
-		"test:e2e": "playwright test",
+		"test:e2e": "npm run build && playwright test",
 		"lint": "eslint .",
 		"test:watch": "vitest",
 		"test:coverage": "vitest run --coverage",
-		"verify:fast": "npm run lint && npm run check && npm run test:coverage && npm run build",
-		"verify": "npm run verify:fast && npm run test:e2e"
+		"verify:fast": "npm run lint && npm run check && npm run test:coverage",
+		"verify": "npm run verify:fast && npm run test:e2e",
+		"icons": "python3 scripts/generate-icons.py"
 	},
 	"devDependencies": {
 		"@eslint/js": "^10.0.1",
@@ -40,7 +41,8 @@
 		"typescript": "^6.0.0",
 		"typescript-eslint": "^8.72.2",
 		"vite": "^8.0.0",
-		"vitest": "^5.0.5"
+		"vitest": "^5.0.5",
+		"workbox-build": "^7.4.1"
 	},
 	"dependencies": {
 		"@mlc-ai/web-llm": "^0.2.86",

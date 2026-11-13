@@ -1,9 +1,17 @@
 <script lang="ts">
 	import '../app.css';
+	import { onMount } from 'svelte';
 	import { resolve } from '$app/paths';
 	import type { Snippet } from 'svelte';
+	import ConnectionPill from '#lib/components/ConnectionPill.svelte';
+	import PwaNotice from '#lib/components/PwaNotice.svelte';
+	import { startPwa } from '#lib/pwa/state.svelte';
 
 	let { children }: { children: Snippet } = $props();
+
+	// Service worker, connection events and the install prompt only exist in the
+	// browser; prerendering never reaches this.
+	onMount(startPwa);
 </script>
 
 <header class="topbar">
@@ -11,6 +19,7 @@
 	<nav>
 		<a href={resolve('editor/')}>Editor</a>
 		<a href={resolve('spike/webllm/')}>AI-Spike</a>
+		<ConnectionPill />
 	</nav>
 </header>
 
@@ -18,8 +27,13 @@
 	{@render children()}
 </main>
 
+<PwaNotice />
+
 <style>
 	.topbar {
+		position: sticky;
+		top: 0;
+		z-index: 10;
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
@@ -38,6 +52,7 @@
 
 	nav {
 		display: flex;
+		align-items: center;
 		gap: 1rem;
 		font-size: 0.9rem;
 	}

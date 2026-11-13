@@ -1,21 +1,23 @@
 name: Deploy Pages
 
+# Production: whatever is on `main` becomes https://<owner>.github.io/<repo>/.
+# Published into the root of the `gh-pages` branch; `keep_files` preserves the
+# per-PR preview folders that `preview-pages.yml` writes below `pr-<number>/`.
+
 on:
   push:
     branches: [main]
   workflow_dispatch:
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write
 
 concurrency:
-  group: pages
+  group: pages-publish
   cancel-in-progress: false
 
 jobs:
-  build:
+  publish:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -27,18 +29,15 @@ jobs:
 
       - run: npm ci
 
-      - run: npm run build
+      - name: Build for the project sub-path
+        env:
+          PUBLIC_BASE_PATH: /${{ github.event.repository.name }}
+        run: npm run build
 
-      - uses: actions/upload-pages-artifact@v5
+      - name: Publish to gh-pages (root)
+        uses: peaceiris/actions-gh-pages@v4
         with:
-          path: build
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./build
+          keep_files: true
+          commit_message: 'deploy: main @ ${{ github.sha }}'

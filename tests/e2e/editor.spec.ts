@@ -57,21 +57,21 @@ test('the zoom buttons scale by 1.25 per step and stay inside the limits', async
 	await page.goto('/editor/');
 	const initial = await waitForMap(page);
 
+	// The camera reaches the DOM through Svelte's reactive update, so the reading
+	// right after a click can still be the previous one — poll instead of sampling
+	// once, otherwise this test fails only under load.
 	await page.getByRole('button', { name: 'Hineinzoomen' }).click();
-	const zoomed = await readCamera(page);
-	expect(zoomed.zoom / initial.zoom).toBeCloseTo(1.25, 3);
+	await expect.poll(async () => (await readCamera(page)).zoom / initial.zoom).toBeCloseTo(1.25, 3);
 
 	for (let i = 0; i < 12; i++) {
 		await page.getByRole('button', { name: 'Hineinzoomen' }).click();
 	}
-	const max = await readCamera(page);
-	expect(max.zoom).toBeLessThanOrEqual(4.0001);
+	await expect.poll(async () => (await readCamera(page)).zoom).toBeLessThanOrEqual(4.0001);
 
 	for (let i = 0; i < 25; i++) {
 		await page.getByRole('button', { name: 'Herauszoomen' }).click();
 	}
-	const min = await readCamera(page);
-	expect(min.zoom).toBeGreaterThanOrEqual(0.1499);
+	await expect.poll(async () => (await readCamera(page)).zoom).toBeGreaterThanOrEqual(0.1499);
 });
 
 test('the map fits back to the whole map', async ({ page }) => {

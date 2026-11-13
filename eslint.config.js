@@ -40,13 +40,20 @@ export default ts.config(
 		}
 	},
 	{
-		files: ['**/*.svelte'],
+		files: ['**/*.svelte', '**/*.svelte.ts'],
 		languageOptions: {
 			parserOptions: { parser: ts.parser }
 		},
 		rules: {
 			// Svelte requires `let` for `$props()`/`$state()` destructuring.
 			'prefer-const': 'off'
+		}
+	},
+	{
+		// Build tooling and scripts run in Node and are allowed to report progress.
+		files: ['scripts/**/*.{js,mjs,ts}'],
+		rules: {
+			'no-console': 'off'
 		}
 	},
 	{

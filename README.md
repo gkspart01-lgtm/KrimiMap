@@ -13,7 +13,7 @@ files plus an installable PWA, and local inference is the preferred AI mode.
 Repository content, code comments and docs are in English; the UI ships German
 and English.
 
-## Current state — Phase 0
+## Current state — Phase 1
 
 Implemented:
 
@@ -29,20 +29,27 @@ Implemented:
 - Interaction logic in a framework-free `MapController` (drag, pinch, zoom,
   clamping) with unit tests, plus a Playwright suite that drives a real Chromium
   with mouse _and_ emulated two-finger touch.
+- **Installable PWA**: web app manifest, icon set, and a Workbox service worker
+  that precaches the whole app shell (33 entries, ~1.5 MB). The editor opens
+  offline after one visit, an update waits for the user instead of reloading
+  under their fingers, and a pill in the header shows online/offline plus
+  whether the cache is armed. Details and the trade-offs:
+  [`docs/pwa.md`](docs/pwa.md).
 - `npm run verify` as the single gate: lint, types, formatting, unit tests with
-  coverage thresholds, static build, browser tests.
+  coverage thresholds, static build, browser tests including the offline reload.
 
 Not implemented yet (next phases): IndexedDB persistence, case import/export,
-editor tools (entities, layers, timeline, undo/redo), playtest mode, PWA
-offline caching, AI generation inside the editor.
+editor tools (entities, layers, timeline, undo/redo), playtest mode, AI
+generation inside the editor.
 
 ## Commands
 
 ```bash
 npm ci                 # install from the lockfile
-npm run dev            # dev server
-npm run build          # static production build into build/
-npm run preview        # serve the production build
+npm run dev            # dev server (no service worker; registration is skipped)
+npm run build          # static production build into build/ + service worker
+npm run preview        # serve the production build from build/
+npm run icons          # regenerate static/icons from scripts/generate-icons.py
 npm run lint           # ESLint
 npm run check          # svelte-kit sync + svelte-check + prettier check
 npm test               # unit tests (Vitest)
@@ -62,16 +69,26 @@ Set `PUBLIC_BASE_PATH` when the site is served from a sub-path, e.g.
 ## Workflow
 
 Work happens on a feature branch per phase; `main` only receives reviewed,
-green merges. The PR preview is published to GitHub Pages (`gh-pages` branch)
-so the branch state can be tested in a real browser — WebGPU and PWA features
-need HTTPS, which is why a local file server is not enough.
+green merges.
+
+- **Production** — `https://gkspart01-lgtm.github.io/KrimiMap/` is always the
+  `main` state: `deploy-pages.yml` builds on every push to `main` and publishes
+  to the root of the `gh-pages` branch.
+- **Per-PR preview** — `preview-pages.yml` builds each pull request with the
+  sub-path `/KrimiMap/pr-<number>/` and publishes it below `pr-<number>/` on the
+  same branch, then comments the URL on the PR. Previews are additive
+  (`keep_files`), so publishing one never removes production or another preview.
+
+A build marker (`VITE_BUILD_INFO`) is shown on the landing page, so it is easy to
+tell which commit a URL is serving.
 
 ## Deployment
 
-GitHub Pages serves the PR preview at `/KrimiMap/`. Pages serves the repository
-under a sub-path, so that build needs `PUBLIC_BASE_PATH=/KrimiMap npm run build`;
-the prerendered pages then use relative asset URLs and `resolve()` covers in-app
-links.
+GitHub Pages serves the repository from the `gh-pages` branch — production at
+`/KrimiMap/`, previews at `/KrimiMap/pr-<n>/`. Pages serves the project under a
+sub-path, so those builds need `PUBLIC_BASE_PATH=/KrimiMap` (or the preview
+variant); the prerendered pages then use relative asset URLs, `resolve()` covers
+in-app links, and the service worker registers with the matching scope.
 
 Any other host that serves the site at its root only needs plain
 `npm run build` and the `build/` directory as document root — no server code, no
@@ -82,6 +99,9 @@ One limitation of Pages: it cannot set response headers. That rules out
 enable multi-threaded WASM (`crossOriginIsolated`) and could speed up local
 inference considerably. A self-hosted reverse proxy in front of the static files
 would solve that without changing the build.
+
+Closed pull requests leave their preview folder behind; delete `pr-<number>/`
+manually or add a cleanup job when the folder list becomes noisy.
 
 ## Architecture boundaries
 
