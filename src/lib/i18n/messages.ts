@@ -77,6 +77,8 @@ const de: Messages = {
 	'editor.form.kind': 'Art',
 	'editor.form.description': 'Beschreibung',
 	'editor.form.delete': 'Eintrag löschen',
+	'editor.undo': 'Rückgängig',
+	'editor.redo': 'Wiederholen',
 	'editor.hint.none':
 		'Kein Eintrag ausgewählt. Marker auf der Karte anklicken oder oben einen neuen anlegen.',
 	'editor.issues': 'Hinweise',
@@ -169,6 +171,8 @@ const en: Messages = {
 	'editor.form.kind': 'Kind',
 	'editor.form.description': 'Description',
 	'editor.form.delete': 'Delete entry',
+	'editor.undo': 'Undo',
+	'editor.redo': 'Redo',
 	'editor.hint.none': 'Nothing selected. Click a marker on the map or add one above.',
 	'editor.issues': 'Notes',
 	'editor.loading': 'Loading map…',

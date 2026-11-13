@@ -18,8 +18,10 @@
 		lastCaseId,
 		moveCaseEntity,
 		openCase,
+		redoCaseEdit,
 		renameCurrentCase,
 		selectEntity,
+		undoCaseEdit,
 		updateCaseEntity
 	} from '#lib/state/cases.svelte';
 
@@ -43,6 +45,23 @@
 						? t('save.saved')
 						: ''
 	);
+
+	// Undo/redo shortcuts. Text fields keep their own undo, so the handler steps
+	// aside for inputs — only the document history responds here.
+	onMount(() => {
+		const onKeydown = (event: KeyboardEvent) => {
+			if (!(event.ctrlKey || event.metaKey)) return;
+			if (event.key.toLowerCase() !== 'z') return;
+			const target = event.target as HTMLElement | null;
+			if (target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
+			event.preventDefault();
+			if (event.shiftKey) redoCaseEdit();
+			else undoCaseEdit();
+		};
+
+		window.addEventListener('keydown', onKeydown);
+		return () => window.removeEventListener('keydown', onKeydown);
+	});
 
 	onMount(() => {
 		let cancelled = false;
@@ -197,6 +216,25 @@
 			{#if store.error}
 				<p class="save-error small" data-testid="save-error">{store.error}</p>
 			{/if}
+
+			<div class="history-row">
+				<button
+					type="button"
+					class="ghost"
+					disabled={!store.canUndo}
+					title={t('editor.undo')}
+					aria-label={t('editor.undo')}
+					onclick={undoCaseEdit}>↶</button
+				>
+				<button
+					type="button"
+					class="ghost"
+					disabled={!store.canRedo}
+					title={t('editor.redo')}
+					aria-label={t('editor.redo')}
+					onclick={redoCaseEdit}>↷</button
+				>
+			</div>
 
 			<div class="add-row">
 				{#each ENTITY_KINDS as kind (kind)}
@@ -394,6 +432,27 @@
 	.save-error {
 		margin: 0;
 		color: var(--error);
+	}
+
+	.history-row {
+		display: flex;
+		gap: 0.35rem;
+	}
+
+	button.ghost {
+		min-width: 2.1rem;
+		padding: 0.25rem 0.5rem;
+		border: 1px solid var(--border);
+		border-radius: 8px;
+		background: transparent;
+		color: var(--text);
+		font: inherit;
+		cursor: pointer;
+	}
+
+	button.ghost:disabled {
+		opacity: 0.35;
+		cursor: default;
 	}
 
 	.add-row {

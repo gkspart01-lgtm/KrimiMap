@@ -133,3 +133,36 @@ test('switches the interface language and remembers it', async ({ page }) => {
 	await page.getByRole('button', { name: 'Switch language' }).click();
 	await expect(page.getByRole('button', { name: '+ Hinweis' })).toBeVisible();
 });
+
+test('undoes and redoes an edit, and persists the result', async ({ page }) => {
+	await createCase(page);
+	await page.getByRole('textbox', { name: 'Titel des Falls' }).fill('Undo-Fall');
+	await page.getByRole('button', { name: '+ Hinweis' }).click();
+	await expect(page.getByTestId('entity-form')).toBeVisible();
+
+	await page.getByRole('button', { name: 'Rückgängig' }).click();
+	await expect(page.getByTestId('entity-form')).toHaveCount(0);
+	await expect(page.getByTestId('editor-panel')).toContainText('Kein Eintrag ausgewählt');
+
+	await page.getByRole('button', { name: 'Wiederholen' }).click();
+	await expect(page.getByTestId('entity-form')).toBeVisible();
+
+	// The undone/redone state goes through the same autosave path.
+	await expect(page.getByTestId('save-state')).toHaveAttribute('data-state', 'saved', {
+		timeout: 10_000
+	});
+	await page.goto('/cases/');
+	await expect(page.getByTestId('case-list')).toContainText('1 Eintrag');
+});
+
+test('keyboard shortcut undoes the last edit', async ({ page }) => {
+	await createCase(page);
+	await page.getByRole('textbox', { name: 'Titel des Falls' }).fill('Tastatur-Fall');
+	// Clicking a button moves focus out of the text field: inside it, Ctrl+Z
+	// belongs to the field itself.
+	await page.getByRole('button', { name: '+ Objekt' }).click();
+	await expect(page.getByTestId('entity-form')).toBeVisible();
+
+	await page.keyboard.press('Control+z');
+	await expect(page.getByTestId('entity-form')).toHaveCount(0);
+});
