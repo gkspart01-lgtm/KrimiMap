@@ -24,6 +24,8 @@ import {
 	type CaseSummary
 } from '#lib/storage/db';
 import { downloadCase, parseCaseJson, readCaseFile, withFreshIdentity } from '#lib/storage/json';
+import { applyCaseDraft } from '#lib/domain/case-draft-apply';
+import type { CaseDraft } from '#lib/ai/contracts/case-draft';
 import {
 	canRedo as canRedoHistory,
 	canUndo as canUndoHistory,
@@ -256,6 +258,14 @@ export function updateCaseChallenge(patch: Parameters<typeof updateChallenge>[1]
 
 export function updateCaseSummary(summary: string): void {
 	apply((document) => updateMeta(document, { summary }));
+}
+
+/**
+ * Apply an approved AI draft to the current case. Undoable like any other edit;
+ * the draft itself never mutates the document.
+ */
+export function applyCaseDraftToCurrent(draft: CaseDraft): void {
+	apply((document) => applyCaseDraft(document, draft));
 }
 
 export function deleteCaseEntity(id: string): void {
