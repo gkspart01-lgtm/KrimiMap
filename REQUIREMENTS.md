@@ -1,7 +1,7 @@
 # KrimiMap — Software Requirements Specification
 
 **Version:** 0.1 (draft for review)
-**Status:** Requirements baseline; implementation has not been selected
+**Status:** Product requirements baseline; implementation choices remain nonbinding
 **Project:** KrimiMap
 
 ## 1. Purpose and scope
@@ -55,6 +55,10 @@ All project documentation and repository content shall be maintained in English.
 - **FR-18 — Provider choice and cost consent (Must):** The application shall make the selected provider/model and any known cost or usage limits visible. It shall not switch to another provider, enable paid usage, or submit prompts without the user's explicit action.
 - **FR-19 — Data disclosure (Must):** Before the first cloud request, the application shall explain what prompt and case data will be sent to the selected provider and let the user cancel.
 
+### 4.4 Shared map and case layers
+
+- **FR-20 — Shared map (Must):** All first-release cases shall reference one shared `MapDocument`. Case-specific entities shall remain owned by their case; while editing one case, entities from other cases on that map shall be visible as dimmed, non-interactive background context. Only the active case's entities may be selected or edited.
+
 ## 5. Quality and platform requirements
 
 - **NFR-01 — Mobile-first:** Core editor and player workflows shall adapt to phone, tablet, and desktop layouts and support touch as well as mouse/keyboard input.
@@ -69,9 +73,9 @@ All project documentation and repository content shall be maintained in English.
 
 ## 6. Candidate technical direction (not a commitment)
 
-Existing planning material names Phaser 4, Svelte 5/SvelteKit, Vite, WebGL, Tiled JSON, and local browser storage. These remain candidates only and may be reused if they satisfy this specification, have suitable open-source licenses and active communities, and pass technical validation. No programming language, framework, map format, database, or AI vendor is selected by this specification. Application runtime and persistence must remain client-side; the no-backend requirement is mandatory.
+Existing planning material names Phaser 4 and other technologies as candidates; the current editor uses Leaflet for its flat shared map. These implementation choices remain subject to validation and do not alter the product requirements. No programming language, framework, map format, database, or AI vendor is mandated by this specification. Application runtime and persistence must remain client-side; the no-backend requirement is mandatory.
 
-A static SvelteKit build and Phaser 4 canvas remain candidates for validation.[5][6]
+A static SvelteKit build and Leaflet `CRS.Simple` image overlay are the current editor implementation.[5][6][7]
 
 Browser-local inference engines such as WebLLM and Transformers.js are candidates for a feasibility test: their documentation describes in-browser inference, while Transformers.js notes that WebGPU remains experimental in many browsers.[3][4] Suitability for target devices, output quality, model download size, and model licensing are not yet established.
 
@@ -92,6 +96,7 @@ The first release is acceptable when all of the following are demonstrated:
 - **AC-09:** The repository's core application and required dependencies pass a license review against the project's MIT license.
 - **AC-10 — Offline core:** After the static app shell and required assets have been installed/cached, disconnecting the network does not prevent creating, editing, saving, reopening, exporting, importing, or playtesting a local case. These workflows make no request to a KrimiMap-owned backend.
 - **AC-11 — AI modes:** Local AI makes no network requests after the selected model is present locally. If local inference is unavailable, cloud AI is only used after the user selects it, supplies a key, and accepts the data disclosure; an error never triggers silent cloud fallback.
+- **AC-12 — Shared map:** Two cases created on the first-release map reference the same `MapDocument`; when one is open, the other case's entities are visibly dimmed and cannot be selected or moved, while active-case entities remain editable.
 
 Specific browser versions, screen sizes, map scale, entity counts, performance limits, and offline installation targets must be agreed before final release acceptance.
 
@@ -115,4 +120,5 @@ Specific browser versions, screen sizes, map scale, entity counts, performance l
 [3] https://webllm.mlc.ai/docs — WebLLM official docs: browser-local LLM inference using WebGPU
 [4] https://huggingface.co/docs/transformers.js/en/index — Transformers.js official docs: browser inference and WebGPU caveats
 [5] https://svelte.dev/docs/kit/adapter-static — SvelteKit: static site adapter
-[6] https://phaser.io/phaser4 — Phaser official: Phaser 4 web game framework
+[6] https://leafletjs.com/reference.html — Leaflet official API reference
+[7] https://leafletjs.com/examples/crs-simple/crs-simple.html — Leaflet non-geographical maps and `CRS.Simple`

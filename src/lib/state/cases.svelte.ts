@@ -22,6 +22,15 @@ import {
 	type CaseSummary
 } from '#lib/storage/db';
 import { downloadCase, parseCaseJson, readCaseFile, withFreshIdentity } from '#lib/storage/json';
+import {
+	canRedo as canRedoHistory,
+	canUndo as canUndoHistory,
+	createHistory,
+	push as pushHistory,
+	redo as redoHistory,
+	undo as undoHistory,
+	type History
+} from '#lib/domain/history';
 
 export type SaveState = 'idle' | 'dirty' | 'saving' | 'saved' | 'error';
 
@@ -31,6 +40,7 @@ const SAVE_DELAY_MS = 400;
 let cases = $state<CaseSummary[]>([]);
 let current = $state<CaseDocument | null>(null);
 let selectedId = $state<string | null>(null);
+let history = $state<History<CaseDocument> | null>(null);
 let saveState = $state<SaveState>('idle');
 let error = $state<string | null>(null);
 let loading = $state(false);
@@ -70,8 +80,11 @@ async function persist(document: CaseDocument): Promise<void> {
 	try {
 		// `$state` objects are proxies: structured clone (and therefore IndexedDB)
 		// refuses them. A snapshot is a plain deep copy.
-		const stored = await saveCase($state.snapshot(document) as CaseDocument);
-		current = stored;
+		await saveCase($state.snapshot(document) as CaseDocument);
+		// Keep the in-memory object (and with it the history entry) instead of
+		// swapping in the stored copy: only `updatedAt` differs, and replacing it
+		// would silently desynchronise undo/redo from what the user sees.
+		current = document;
 		saveState = 'saved';
 		error = null;
 		await refreshList();
@@ -91,13 +104,32 @@ function scheduleSave(): void {
 	}, SAVE_DELAY_MS);
 }
 
-/** Apply a domain command and queue the save. */
+/** Apply a domain command, remember the previous state and queue the save. */
 function apply(mutator: (document: CaseDocument) => CaseDocument): void {
 	if (!current) return;
+	// Defensive: a document without history would silently drop the edit.
+	history ??= createHistory(current);
 	const next = mutator(current);
 	if (next === current) return;
+	history = pushHistory(history, next);
 	current = next;
 	scheduleSave();
+}
+
+/** Replace the current document from the history and persist it. */
+function adoptFromHistory(next: History<CaseDocument>): void {
+	if (next === history) return;
+	history = next;
+	current = next.present;
+	scheduleSave();
+}
+
+export function undoCaseEdit(): void {
+	if (history) adoptFromHistory(undoHistory(history));
+}
+
+export function redoCaseEdit(): void {
+	if (history) adoptFromHistory(redoHistory(history));
 }
 
 export function caseStore() {
@@ -125,6 +157,12 @@ export function caseStore() {
 		},
 		get selected() {
 			return current?.entities.find((entity) => entity.id === selectedId) ?? null;
+		},
+		get canUndo() {
+			return history ? canUndoHistory(history) : false;
+		},
+		get canRedo() {
+			return history ? canRedoHistory(history) : false;
 		}
 	};
 }
@@ -144,6 +182,7 @@ export async function openCase(id: string): Promise<CaseDocument | null> {
 			return null;
 		}
 		current = loaded;
+		history = createHistory(loaded);
 		selectedId = null;
 		saveState = 'saved';
 		rememberLastCase(loaded.id);
@@ -163,6 +202,7 @@ export async function createCase(title?: string): Promise<CaseDocument | null> {
 		const stored = await saveCase(document);
 		await refreshList();
 		current = stored;
+		history = createHistory(stored);
 		selectedId = null;
 		saveState = 'saved';
 		rememberLastCase(stored.id);
@@ -175,6 +215,7 @@ export async function createCase(title?: string): Promise<CaseDocument | null> {
 
 export function closeCase(): void {
 	current = null;
+	history = null;
 	selectedId = null;
 	saveState = 'idle';
 	rememberLastCase(null);
@@ -252,6 +293,7 @@ export async function importCaseFile(file: File): Promise<CaseDocument | null> {
 		const stored = await saveCase(document);
 		await refreshList();
 		current = stored;
+		history = createHistory(stored);
 		selectedId = null;
 		saveState = 'saved';
 		rememberLastCase(stored.id);

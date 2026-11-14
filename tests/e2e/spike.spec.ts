@@ -36,7 +36,7 @@ test('the app only talks to its own static origin', async ({ page }) => {
 
 	await page.goto('/');
 	await page.goto('/editor/');
-	await expect(page.locator('canvas')).toBeVisible({ timeout: 20_000 });
+	await expect(page.getByTestId('map')).toBeVisible({ timeout: 20_000 });
 
 	// Model weights come from a CDN only after the user asks for a download.
 	expect(external).toEqual([]);

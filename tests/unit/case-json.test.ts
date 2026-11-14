@@ -92,7 +92,8 @@ describe('parseCaseJson migrates', () => {
 		);
 		expect(result.ok).toBe(true);
 		if (!result.ok) return;
-		expect(result.document.schemaVersion).toBe(1);
+		expect(result.document.schemaVersion).toBe(2);
+		expect(result.document.mapId).toBe('crime-city');
 		expect(result.document.entities[0].id).toBe('tuer');
 	});
 });

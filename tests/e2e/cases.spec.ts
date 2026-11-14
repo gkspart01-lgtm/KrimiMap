@@ -12,14 +12,31 @@ async function createCase(page: Page): Promise<void> {
 	await page.getByRole('button', { name: 'Neuer Fall' }).click();
 	await page.waitForURL(/\/editor\/\?id=/);
 	await waitForMap(page);
+	// The panel proves the editor hydrated and the store is wired up.
+	await expect(page.getByTestId('editor-panel')).toBeVisible();
+	await expect(page.getByTestId('save-state')).toBeVisible();
+}
+
+/**
+ * Add an entity and wait for its form.
+ *
+ * On a slow runner the very first click can land before the hydrated handler is
+ * attached, which makes the click a no-op. Retrying the interaction as a unit is
+ * what Playwright's `toPass` is for — and it keeps the test about behaviour
+ * instead of about hydration timing.
+ */
+async function addEntity(page: Page, label: string): Promise<void> {
+	await expect(async () => {
+		await page.getByRole('button', { name: label }).click();
+		await expect(page.getByTestId('entity-form')).toBeVisible({ timeout: 1500 });
+	}).toPass({ timeout: 15_000 });
 }
 
 test('creates a case, adds an entity and keeps it after a reload', async ({ page }) => {
 	await createCase(page);
 
 	await page.getByRole('textbox', { name: 'Titel des Falls' }).fill('Der Fall im Moor');
-	await page.getByRole('button', { name: '+ Hinweis' }).click();
-	await expect(page.getByTestId('entity-form')).toBeVisible();
+	await addEntity(page, '+ Hinweis');
 
 	await page.getByTestId('entity-form').getByRole('textbox').first().fill('Taschenlampe');
 	// Autosave is debounced; the status pill is the UI contract.
@@ -42,7 +59,7 @@ test('creates a case, adds an entity and keeps it after a reload', async ({ page
 test('edits survive offline', async ({ page, context }) => {
 	await createCase(page);
 	await page.getByRole('textbox', { name: 'Titel des Falls' }).fill('Offline-Fall');
-	await page.getByRole('button', { name: '+ Figur' }).click();
+	await addEntity(page, '+ Figur');
 	await expect(page.getByTestId('save-state')).toHaveAttribute('data-state', 'saved', {
 		timeout: 10_000
 	});
@@ -60,6 +77,9 @@ test('edits survive offline', async ({ page, context }) => {
 	await page.getByTestId('case-list').getByRole('button').first().click();
 	await page.waitForURL(/\/editor\/\?id=/);
 	await waitForMap(page);
+	// The panel proves the editor hydrated and the store is wired up.
+	await expect(page.getByTestId('editor-panel')).toBeVisible();
+	await expect(page.getByTestId('save-state')).toBeVisible();
 });
 
 test('imports a version-0 draft and migrates it', async ({ page }) => {
@@ -132,4 +152,40 @@ test('switches the interface language and remembers it', async ({ page }) => {
 	// Back to German for the rest of the suite.
 	await page.getByRole('button', { name: 'Switch language' }).click();
 	await expect(page.getByRole('button', { name: '+ Hinweis' })).toBeVisible();
+});
+
+test('undoes and redoes an edit, and persists the result', async ({ page }) => {
+	await createCase(page);
+	await page.getByRole('textbox', { name: 'Titel des Falls' }).fill('Undo-Fall');
+	await addEntity(page, '+ Hinweis');
+
+	await page.getByRole('button', { name: 'Rückgängig' }).click();
+	await expect(page.getByTestId('entity-form')).toHaveCount(0);
+	await expect(page.getByTestId('editor-panel')).toContainText('Kein Eintrag ausgewählt');
+
+	await page.getByRole('button', { name: 'Wiederholen' }).click();
+	await expect(page.getByTestId('entity-form')).toBeVisible();
+
+	// The undone/redone state goes through the same autosave path.
+	await expect(page.getByTestId('save-state')).toHaveAttribute('data-state', 'saved', {
+		timeout: 10_000
+	});
+	await page.goto('/cases/');
+	await expect(page.getByTestId('case-list')).toContainText('1 Eintrag');
+});
+
+test('keyboard shortcut undoes the last edit', async ({ page }) => {
+	await createCase(page);
+	await page.getByRole('textbox', { name: 'Titel des Falls' }).fill('Tastatur-Fall');
+	// Clicking a button moves focus out of the text field: inside it, Ctrl+Z
+	// belongs to the field itself.
+	await addEntity(page, '+ Objekt');
+
+	// Click somewhere empty on the canvas: that clears the selection without
+	// touching the document, and it puts focus outside any text field (inside one,
+	// Ctrl+Z belongs to the field).
+	await page.getByTestId('map').click({ position: { x: 30, y: 30 } });
+
+	await page.keyboard.press('Control+z');
+	await expect(page.getByTestId('entity-form')).toHaveCount(0);
 });

@@ -13,34 +13,31 @@ files plus an installable PWA, and local inference is the preferred AI mode.
 Repository content, code comments and docs are in English; the UI ships German
 and English.
 
-## Current state — Phase 2
+## Current state — shared-map editor (Phase 3)
 
 Implemented:
 
 - Static SvelteKit + TypeScript + Vite build (`adapter-static`), no server code
   and no runtime KrimiMap endpoint.
-- Phaser 4 map workspace at `/editor`: pan (drag), wheel zoom, pinch zoom, with
-  the camera maths kept in a framework-free module and unit tested.
+- Leaflet map editor at `/editor` using `CRS.Simple` and one static, fictional
+  city map. Drag, wheel zoom, pinch zoom, image rendering and touch selection are
+  browser-tested; Leaflet owns map navigation rather than app-written gestures.
 - `CaseDocument`-shaped AI draft contract with hand-written validation
   (required fields, duplicate IDs, broken character references) and tests.
 - WebLLM feasibility harness at `/spike/webllm` — see
   [`docs/spike-webllm.md`](docs/spike-webllm.md). Measurements pending on real
   devices.
-- Interaction logic in a framework-free `MapController` (drag, pinch, zoom,
-  clamping) with unit tests, plus a Playwright suite that drives a real Chromium
-  with mouse _and_ emulated two-finger touch.
 - **Installable PWA**: web app manifest, icon set, and a Workbox service worker
-  that precaches the whole app shell (33 entries, ~1.5 MB). The editor opens
+  that precaches the whole app shell (currently about 42 entries, ~1.6 MB). The editor opens
   offline after one visit, an update waits for the user instead of reloading
   under their fingers, and a pill in the header shows online/offline plus
   whether the cache is armed. Details and the trade-offs:
   [`docs/pwa.md`](docs/pwa.md).
 - **A UI for humans first**: camera numbers, the AI spike and the build stamp
   are behind a debug switch (gear in the header, or `?debug=1`, remembered
-  locally). The placeholder map is drawn as a cartographer's board — gradient
-  backdrop, two grid levels, frame with corner ticks, edge coordinates, marker
-  glow and plated labels — all generated at boot, so there are no image assets to
-  ship or license. The install hint can be dismissed and stays dismissed.
+  locally). The editor displays the original, project-authored `Crime City` SVG
+  map, bundled and cached from the same origin; no third-party map tiles or
+  copyrighted MicroMacro artwork are used.
 - `npm run verify` as the single gate: lint, types, formatting, unit tests with
   coverage thresholds, static build, browser tests including the offline reload.
 
@@ -51,14 +48,14 @@ Implemented:
 - **German and English**: every user-visible string lives in `src/lib/i18n`, the
   header switches language at any time and remembers it; validation diagnostics
   carry a `code` so the panel can translate them too.
-- **A working editor**: case list at `/cases` (create, open, import, export,
-  delete), and `/editor?id=…` with the case's own map size, its markers, click to
-  select, drag to place, edit name/kind/description, delete, validate — all
-  autosaved with a visible save state.
+- **Cases share one map**: schema v2 cases reference the static `crime-city`
+  `MapDocument`; legacy per-case coordinates migrate proportionally. The current
+  case's objects are editable; all other cases' objects appear dimmed behind and
+  cannot be selected or moved. The editor supports mouse/touch selection, marker
+  dragging, property edits, validation, autosave, undo and redo.
 
-Not implemented yet (next phases): layers and timeline events, undo/redo (the
-domain commands are pure, so it is a history on top), playtest mode, and AI
-generation inside the editor.
+Not implemented yet (next phases): named layers and timeline events, playtest mode,
+and AI generation inside the editor.
 
 ## Commands
 
@@ -124,9 +121,12 @@ manually or add a cleanup job when the folder list becomes noisy.
 ## Architecture boundaries
 
 - `src/lib/domain` and `src/lib/ai/contracts` — framework-free rules, no
-  Svelte/Phaser imports.
-- `src/lib/game` — Phaser bootstrapping and the camera; the scene renders and
-  reports input, it does not own case data.
-- `src/routes` — static UI only; Phaser and browser APIs start in `onMount`.
+  Svelte/Leaflet imports.
+- `src/lib/game/createLeafletEditor.ts` — browser-only Leaflet map adapter; the
+  map instance renders shared map art and active/inactive case layers, while
+  domain documents remain canonical.
+- `src/lib/domain/map-document.ts` — the reusable shared map identity, bounds and
+  same-origin asset reference; cases reference it through `mapId`.
+- `src/routes` — static UI only; Leaflet and browser APIs start in `onMount`.
 - AI output is always a draft: validated and shown for approval, never written
   into a case silently. Without a model or key the editor must stay fully usable.

@@ -52,13 +52,39 @@ describe('slugify / uniqueId', () => {
 });
 
 describe('createEmptyCase', () => {
-	it('starts at the current schema version with map limits applied', () => {
-		const document = createEmptyCase({ title: '  Der Fall  ', map: { width: 99999 } });
+	it('starts at the current schema version and references the shared map', () => {
+		const document = createEmptyCase({ title: '  Der Fall  ' });
 		expect(document.schemaVersion).toBe(CASE_SCHEMA_VERSION);
 		expect(document.title).toBe('Der Fall');
-		expect(document.map.width).toBe(6000);
-		expect(document.map.height).toBe(1600);
+		expect(document.mapId).toBe('crime-city');
 		expect(validateCase(document).filter((issue) => issue.severity === 'error')).toEqual([]);
+	});
+
+	it('migrates old map coordinates proportionally onto the shared map', () => {
+		const migrated = migrateCase({
+			schemaVersion: 1,
+			id: 'old-case',
+			title: 'Alter Fall',
+			language: 'de',
+			map: { width: 6000, height: 400 },
+			entities: [
+				{
+					id: 'clue',
+					kind: 'clue',
+					name: 'Spur',
+					description: '',
+					position: { x: 3000, y: 200 },
+					color: ENTITY_KIND_COLORS.clue,
+					relatedEntityIds: []
+				}
+			],
+			createdAt: '2026-01-01T00:00:00.000Z',
+			updatedAt: '2026-01-01T00:00:00.000Z'
+		});
+
+		expect(migrated.schemaVersion).toBe(CASE_SCHEMA_VERSION);
+		expect(migrated.mapId).toBe('crime-city');
+		expect(migrated.entities[0].position).toEqual({ x: 1200, y: 800 });
 	});
 
 	it('warns about an empty case instead of rejecting it', () => {
@@ -129,10 +155,11 @@ describe('migrateCase', () => {
 		expect(migrated.schemaVersion).toBe(CASE_SCHEMA_VERSION);
 		expect(migrated.id).toMatch(/^[0-9a-z-]+$/);
 		expect(migrated.language).toBe('de');
-		expect(migrated.map).toEqual({ width: 2400, height: 1600 });
+		expect(migrated.mapId).toBe('crime-city');
 		expect(migrated.entities[0]).toMatchObject({
 			id: 'leiche-im-garten',
 			kind: 'object',
+			position: { x: 20, y: 30 },
 			color: ENTITY_KIND_COLORS.object
 		});
 	});

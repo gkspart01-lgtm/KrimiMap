@@ -6,14 +6,14 @@ browser?_ (end-to-end). Type checking and linting guard the code in between.
 
 ## Gates
 
-| Gate     | Command                 | Catches                                                                                                                       |
-| -------- | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| Lint     | `npm run lint`          | unused code, `any`, sloppy equality, leftover `console`, Svelte-specific mistakes                                             |
-| Types    | `npm run check`         | type errors, wrong SvelteKit APIs, broken `#lib` imports, formatting drift (Prettier)                                         |
-| Unit     | `npm test`              | camera maths, gesture logic, case-draft contract and repair                                                                   |
-| Coverage | `npm run test:coverage` | unit-test gaps in the framework-free modules (thresholds below)                                                               |
-| Build    | `npm run build`         | static output breaks, prerender errors, base-path handling                                                                    |
-| Browser  | `npm run test:e2e`      | canvas boot, exact drag/pinch behaviour, DPR rendering, navigation, WebGPU fallback, offline reload, same-origin-only traffic |
+| Gate     | Command                 | Catches                                                                                                                                    |
+| -------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Lint     | `npm run lint`          | unused code, `any`, sloppy equality, leftover `console`, Svelte-specific mistakes                                                          |
+| Types    | `npm run check`         | type errors, wrong SvelteKit APIs, broken `#lib` imports, formatting drift (Prettier)                                                      |
+| Unit     | `npm test`              | shared-map document, case schema/migrations/commands, case storage and AI draft contract/repair                                            |
+| Coverage | `npm run test:coverage` | unit-test gaps in the framework-free modules (thresholds below)                                                                            |
+| Build    | `npm run build`         | static output breaks, prerender errors, base-path handling                                                                                 |
+| Browser  | `npm run test:e2e`      | Leaflet map/image load, exact pan/zoom/pinch, selection/drag, inactive case overlays, navigation, offline reload, same-origin-only traffic |
 
 `npm run verify:fast` runs lint → types → unit+coverage.
 `npm run verify` adds the browser suite, which builds once and then serves that
@@ -25,11 +25,7 @@ it produce failures that look like rendering bugs.
 
 `tests/unit/`
 
-- `camera.test.ts` — projection, pan, anchored zoom, clamping with slack, fit.
-- `map-controller.test.ts` — the gesture state machine: one-finger drag tracks
-  the pointer exactly, pinch uses a gesture baseline (so alternating finger
-  updates cannot jitter), lifting one finger does not jump, wheel anchoring,
-  zoom limits, clamping, change notifications.
+- `map-document.test.ts` — stable shared-map identity, dimensions and static asset reference.
 - `case-draft.test.ts` / `case-draft-edges.test.ts` — the AI draft contract:
   required fields, length limits, duplicate ids, broken references, malformed
   collections, and the repair pass (kebab-case ids, de-duplication, reference
@@ -79,9 +75,14 @@ and the PWA tests would fail against a perfectly good build.
   it again, edit while offline, import a version-0 draft (migrated), reject a
   broken import with a readable message, delete a case, and switch the UI to
   English and back (persisted across a reload).
+- **mouse selection** (`entity-selection.spec.ts`): click an existing marker to
+  open its form, click empty map to clear selection, and reselect the marker by
+  its world-to-screen position.
 - **mobile project** (Pixel 5, touch): canvas renders at the phone pixel ratio,
-  one-finger drag pans without scrolling the page, two-finger pinch zooms in and
-  out around the midpoint. Multi-touch goes through the DevTools protocol
+  one-finger drag pans at initial fit and when zoomed (including the map's
+  viewport margin), two-finger pinch zooms in and out around the midpoint,
+  tap selects/deselects an entity, and pinching with either finger order on an
+  entity leaves that entity unmoved. Multi-touch goes through the DevTools protocol
   (`Input.dispatchTouchEvent`) because Playwright's `touchscreen` helper can only
   tap; the CDP session is reused per page because Chromium tracks the touch
   stream per session.

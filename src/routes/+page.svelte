@@ -1,9 +1,21 @@
 <script lang="ts">
+	/* eslint-disable svelte/no-navigation-without-resolve -- the build stamp links to an external GitHub commit, not an app route */
 	import { resolve } from '$app/paths';
 	import { debug } from '#lib/ui/debug.svelte';
-	import { t } from '#lib/i18n/index.svelte';
+	import { formatDateTime, t } from '#lib/i18n/index.svelte';
 
-	const buildInfo = import.meta.env.VITE_BUILD_INFO;
+	const buildLabel = import.meta.env.VITE_BUILD_LABEL;
+	const buildNumber = import.meta.env.VITE_BUILD_NUMBER;
+	const buildAt = import.meta.env.VITE_BUILD_AT;
+	const repo = import.meta.env.VITE_REPO;
+	const sha = import.meta.env.VITE_BUILD_SHA;
+
+	const buildDate = $derived(buildAt ? formatDateTime(buildAt) : '');
+	const stampParts = $derived(
+		[buildLabel, buildNumber ? `#${buildNumber}` : '', buildDate].filter(Boolean) as string[]
+	);
+	const shortSha = $derived(sha ? sha.slice(0, 7) : '');
+	const commitUrl = $derived(sha && repo ? `https://github.com/${repo}/commit/${sha}` : undefined);
 </script>
 
 <svelte:head>
@@ -36,11 +48,24 @@
 				<li><a href={resolve('spike/webllm/')}>{t('landing.debug.spike')}</a></li>
 				<li>{t('landing.debug.webgpu')}</li>
 			</ul>
-			{#if buildInfo}
-				<p class="small muted">
-					{t('landing.debug.build')}: <code data-testid="build-info">{buildInfo}</code>
+			{#if buildLabel}
+				<p class="small muted build-stamp" data-testid="build-info">
+					<span>{t('landing.debug.build')}: {stampParts.join(' · ')}</span>
+					{#if commitUrl}
+						<span aria-hidden="true">·</span>
+						<a href={commitUrl} target="_blank" rel="noreferrer"><code>{shortSha}</code></a>
+					{/if}
 				</p>
 			{/if}
 		</div>
 	{/if}
 </div>
+
+<style>
+	.build-stamp {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		gap: 0.35rem;
+	}
+</style>

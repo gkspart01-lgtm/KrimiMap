@@ -33,7 +33,7 @@ test('navigation reaches the editor and back', async ({ page }) => {
 	await page.goto('/');
 	await page.getByRole('button', { name: 'Karte öffnen' }).click();
 	await expect(page).toHaveURL(/\/editor\/\?id=/);
-	await expect(page.locator('canvas')).toBeVisible();
+	await expect(page.getByTestId('map')).toBeVisible();
 
 	await page.getByRole('link', { name: 'KrimiMap' }).click();
 	await expect(page).toHaveURL(/\/$/);

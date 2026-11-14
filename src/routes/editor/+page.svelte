@@ -3,10 +3,12 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { resolve } from '$app/paths';
-	import type { EditorGameHandle } from '#lib/game/createEditorGame';
+	import { resolve, asset } from '$app/paths';
+	import type { EditorMapHandle } from '#lib/game/createLeafletEditor';
 	import type { EntityKind } from '#lib/domain/case-document';
 	import { ENTITY_KINDS, ENTITY_KIND_COLORS } from '#lib/domain/case-document';
+	import { SHARED_MAP_DOCUMENT } from '#lib/domain/map-document';
+	import { listCaseDocuments } from '#lib/storage/db';
 	import { debug } from '#lib/ui/debug.svelte';
 	import { formatNumber, t, tIssue } from '#lib/i18n/index.svelte';
 	import {
@@ -18,18 +20,23 @@
 		lastCaseId,
 		moveCaseEntity,
 		openCase,
+		redoCaseEdit,
 		renameCurrentCase,
 		selectEntity,
+		undoCaseEdit,
 		updateCaseEntity
 	} from '#lib/state/cases.svelte';
 
 	const store = caseStore();
 
 	let host = $state<HTMLDivElement | null>(null);
-	let handle: EditorGameHandle | null = null;
+	let handle: EditorMapHandle | null = null;
 	let ready = $state(false);
 	let fatal = $state<string | null>(null);
 	let zoom = $state(0);
+	let inactiveEntityCount = $state(0);
+	/** Phones get a drawer instead of a permanent panel: the canvas needs the room. */
+	let panelOpen = $state(false);
 	let centre = $state({ x: 0, y: 0 });
 
 	const saveLabel = $derived(
@@ -44,6 +51,23 @@
 						: ''
 	);
 
+	// Undo/redo shortcuts. Text fields keep their own undo, so the handler steps
+	// aside for inputs — only the document history responds here.
+	onMount(() => {
+		const onKeydown = (event: KeyboardEvent) => {
+			if (!(event.ctrlKey || event.metaKey)) return;
+			if (event.key.toLowerCase() !== 'z') return;
+			const target = event.target as HTMLElement | null;
+			if (target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
+			event.preventDefault();
+			if (event.shiftKey) redoCaseEdit();
+			else undoCaseEdit();
+		};
+
+		window.addEventListener('keydown', onKeydown);
+		return () => window.removeEventListener('keydown', onKeydown);
+	});
+
 	onMount(() => {
 		let cancelled = false;
 
@@ -51,8 +75,8 @@
 			// `?id=` wins, then the last opened case, then a brand new one: the
 			// editor is never a dead end.
 			const requested = page.url.searchParams.get('id');
-			const document = requested ? await openCase(requested) : await openCase(lastCaseId() ?? '');
-			const active = document ?? (await createCase());
+			const loaded = requested ? await openCase(requested) : await openCase(lastCaseId() ?? '');
+			const active = loaded ?? (await createCase());
 			if (cancelled) return;
 			if (!active) {
 				fatal = t('editor.fatal');
@@ -60,12 +84,22 @@
 			}
 			if (!requested) await goto(`${resolve('editor/')}?id=${active.id}`, { replaceState: true });
 
-			// Phaser and WebGL must only start in the browser, never during prerender.
-			const { createEditorGame } = await import('#lib/game/createEditorGame');
+			const allCases = await listCaseDocuments();
+			const backgroundCases = allCases.filter((document) => document.id !== active.id);
+			inactiveEntityCount = backgroundCases.reduce(
+				(count, document) => count + document.entities.length,
+				0
+			);
+
+			// Leaflet and its CSS are browser-only; keep them out of prerendering.
+			const { createLeafletEditor } = await import('#lib/game/createLeafletEditor');
 			if (cancelled || !host) return;
-			handle = createEditorGame(host, {
+			handle = createLeafletEditor(host, {
 				document: active,
+				backgroundDocuments: backgroundCases,
+				mapImage: asset(SHARED_MAP_DOCUMENT.assetPath),
 				onCamera: (camera) => {
+					if (!debug()) return;
 					zoom = camera.zoom;
 					centre = { x: Math.round(camera.x), y: Math.round(camera.y) };
 				},
@@ -92,8 +126,17 @@
 		if (handle && document) handle.setDocument(document);
 	});
 
+	// Open the drawer when the selection changes, not whenever it is closed: reading
+	// `panelOpen` here would make the effect re-run on every toggle and immediately
+	// reopen the drawer the user just closed.
+	let lastSelectedId: string | null = null;
 	$effect(() => {
-		handle?.setSelected(store.selectedId);
+		const id = store.selectedId;
+		handle?.setSelected(id);
+		if (id && id !== lastSelectedId && window.matchMedia('(max-width: 46rem)').matches) {
+			panelOpen = true;
+		}
+		lastSelectedId = id;
 	});
 
 	/**
@@ -103,7 +146,7 @@
 	 */
 	function freePosition(): { x: number; y: number } {
 		const centre = handle?.camera() ?? { x: 1200, y: 800, zoom: 1 };
-		const size = store.current?.map ?? { width: 2400, height: 1600 };
+		const size = SHARED_MAP_DOCUMENT;
 		const entities = store.current?.entities ?? [];
 		const clampAxis = (value: number, max: number) => Math.min(max - 50, Math.max(50, value));
 		const isFree = (candidate: { x: number; y: number }) =>
@@ -159,8 +202,15 @@
 	<div class="workspace">
 		<div class="canvas" bind:this={host} data-testid="map"></div>
 
-		<div class="hud" aria-hidden="true" data-testid="map-hud">
-			<strong>{store.current?.title ?? 'Karte'}</strong>
+		<div class="hud" data-testid="map-hud">
+			<strong>{t('map.shared.title')}</strong>
+			<span class="muted small"
+				>{t('editor.hud.current-case', { title: store.current?.title ?? '' })}</span
+			>
+			<span class="ghost-legend small" data-testid="shared-map-legend">
+				<i aria-hidden="true"></i>
+				{t('editor.hud.other-cases', { count: inactiveEntityCount })}
+			</span>
 			<span class="muted small">{t('editor.hud.hint')}</span>
 			{#if debug()}
 				<span class="small mono" data-testid="zoom-label"
@@ -168,14 +218,21 @@
 						percent: formatNumber(zoom * 100),
 						x: formatNumber(centre.x),
 						y: formatNumber(centre.y),
-						width: store.current?.map.width ?? 0,
-						height: store.current?.map.height ?? 0
+						width: SHARED_MAP_DOCUMENT.width,
+						height: SHARED_MAP_DOCUMENT.height
 					})}</span
 				>
 			{/if}
 		</div>
 
-		<aside class="panel" data-testid="editor-panel">
+		<button
+			type="button"
+			class="panel-toggle"
+			aria-expanded={panelOpen}
+			onclick={() => (panelOpen = !panelOpen)}>{t('editor.panel.toggle')}</button
+		>
+
+		<aside class="panel" class:open={panelOpen} data-testid="editor-panel">
 			<div class="panel-head">
 				<input
 					class="title"
@@ -197,6 +254,25 @@
 			{#if store.error}
 				<p class="save-error small" data-testid="save-error">{store.error}</p>
 			{/if}
+
+			<div class="history-row">
+				<button
+					type="button"
+					class="ghost"
+					disabled={!store.canUndo}
+					title={t('editor.undo')}
+					aria-label={t('editor.undo')}
+					onclick={undoCaseEdit}>↶</button
+				>
+				<button
+					type="button"
+					class="ghost"
+					disabled={!store.canRedo}
+					title={t('editor.redo')}
+					aria-label={t('editor.redo')}
+					onclick={redoCaseEdit}>↷</button
+				>
+			</div>
 
 			<div class="add-row">
 				{#each ENTITY_KINDS as kind (kind)}
@@ -284,7 +360,87 @@
 	.canvas {
 		position: absolute;
 		inset: 0;
+		background: #eee5d3;
 		touch-action: none;
+	}
+
+	:global(.leaflet-container) {
+		width: 100%;
+		height: 100%;
+		background: #eee5d3;
+		font-family: system-ui, sans-serif;
+		cursor: grab;
+	}
+
+	:global(.leaflet-container.leaflet-dragging) {
+		cursor: grabbing;
+	}
+
+	:global(.leaflet-image-layer) {
+		user-select: none;
+		-webkit-user-drag: none;
+	}
+
+	:global(.krimimap-map-marker-icon) {
+		background: none;
+		border: 0;
+		overflow: visible;
+	}
+
+	:global(.krimimap-map-marker) {
+		width: max-content;
+		height: 34px;
+		display: inline-flex;
+		align-items: center;
+		gap: 0.4rem;
+		white-space: nowrap;
+		transform: translateX(-2px);
+		pointer-events: auto;
+		cursor: grab;
+		filter: drop-shadow(0 2px 3px rgba(25, 30, 36, 0.35));
+	}
+
+	:global(.krimimap-map-marker__dot) {
+		width: 26px;
+		height: 26px;
+		flex: 0 0 26px;
+		border: 3px solid #f8f4ec;
+		border-radius: 50%;
+		background: var(--entity-color);
+		box-shadow: 0 0 0 2px color-mix(in srgb, var(--entity-color) 85%, #2a2d32);
+	}
+
+	:global(.krimimap-map-marker__label) {
+		max-width: 18rem;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		padding: 0.2rem 0.42rem;
+		border: 1px solid rgba(104, 91, 69, 0.5);
+		border-radius: 5px;
+		background: rgba(249, 244, 232, 0.94);
+		color: #38352f;
+		font-size: 0.78rem;
+		font-weight: 700;
+		box-shadow: 0 1px 3px rgba(38, 35, 30, 0.18);
+	}
+
+	:global(.krimimap-map-marker.is-selected .krimimap-map-marker__dot) {
+		box-shadow:
+			0 0 0 3px #fff,
+			0 0 0 6px rgba(40, 53, 67, 0.78);
+	}
+
+	:global(.krimimap-map-marker.is-inactive) {
+		filter: grayscale(1);
+		opacity: 0.34;
+		cursor: default;
+		pointer-events: none;
+	}
+
+	:global(.krimimap-map-marker.is-inactive .krimimap-map-marker__label) {
+		border-color: rgba(100, 100, 100, 0.24);
+		background: rgba(220, 220, 220, 0.45);
+		color: #777;
 	}
 
 	.hud,
@@ -305,10 +461,24 @@
 		flex-direction: column;
 		align-items: flex-start;
 		gap: 0.15rem;
-		max-width: 20rem;
+		max-width: min(22rem, 70vw);
 		padding: 0.5rem 0.75rem;
-		/* Informational only: a drag that starts here must still move the map. */
 		pointer-events: none;
+	}
+
+	.ghost-legend {
+		display: flex;
+		align-items: center;
+		gap: 0.35rem;
+		color: var(--text-dim);
+	}
+
+	.ghost-legend i {
+		width: 0.6rem;
+		height: 0.6rem;
+		border-radius: 50%;
+		background: #929292;
+		opacity: 0.7;
 	}
 
 	.toolbar {
@@ -394,6 +564,27 @@
 	.save-error {
 		margin: 0;
 		color: var(--error);
+	}
+
+	.history-row {
+		display: flex;
+		gap: 0.35rem;
+	}
+
+	button.ghost {
+		min-width: 2.1rem;
+		padding: 0.25rem 0.5rem;
+		border: 1px solid var(--border);
+		border-radius: 8px;
+		background: transparent;
+		color: var(--text);
+		font: inherit;
+		cursor: pointer;
+	}
+
+	button.ghost:disabled {
+		opacity: 0.35;
+		cursor: default;
 	}
 
 	.add-row {
@@ -485,13 +676,40 @@
 		padding: 3rem 1rem;
 	}
 
+	.panel-toggle {
+		display: none;
+	}
+
 	@media (max-width: 46rem) {
 		.panel {
 			top: auto;
 			right: 0.75rem;
 			left: 0.75rem;
 			width: auto;
-			max-height: 32vh;
+			max-height: 42vh;
+			/* Closed by default: a permanent sheet would eat half the canvas. */
+			transform: translateY(calc(100% + 5rem));
+			transition: transform 160ms ease;
+		}
+
+		.panel.open {
+			transform: none;
+		}
+
+		.panel-toggle {
+			position: absolute;
+			z-index: 3;
+			right: 0.75rem;
+			bottom: 4.9rem;
+			display: block;
+			padding: 0.4rem 0.7rem;
+			border: 1px solid var(--border);
+			border-radius: 999px;
+			background: rgba(18, 21, 27, 0.92);
+			color: var(--text);
+			font: inherit;
+			font-size: 0.78rem;
+			cursor: pointer;
 		}
 
 		.hud {

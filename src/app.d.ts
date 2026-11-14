@@ -9,8 +9,16 @@ declare global {
 	}
 
 	interface ImportMetaEnv {
-		/** Human-readable build marker shown in the preview, set at build time. */
-		readonly VITE_BUILD_INFO?: string;
+		/** "main" or "PR #12" — set by the deploy workflows. */
+		readonly VITE_BUILD_LABEL?: string;
+		/** Full commit sha of the build. */
+		readonly VITE_BUILD_SHA?: string;
+		/** CI run number, used as the visible build index. */
+		readonly VITE_BUILD_NUMBER?: string;
+		/** ISO timestamp the commit/PR was last updated. */
+		readonly VITE_BUILD_AT?: string;
+		/** "owner/repo", so the stamp can link the commit. */
+		readonly VITE_REPO?: string;
 	}
 }
 

@@ -7,8 +7,10 @@
  * their own idea of what a case is.
  */
 
+import { SHARED_MAP_DOCUMENT, type MapDocumentId } from './map-document';
+
 /** Bumped whenever the stored shape changes in a way that needs a migration. */
-export const CASE_SCHEMA_VERSION = 1;
+export const CASE_SCHEMA_VERSION = 2;
 
 export const ENTITY_KINDS = ['character', 'clue', 'object', 'location'] as const;
 export type EntityKind = (typeof ENTITY_KINDS)[number];
@@ -32,11 +34,6 @@ export interface CasePoint {
 	y: number;
 }
 
-export interface CaseMap {
-	width: number;
-	height: number;
-}
-
 export interface CaseEntity {
 	/** Stable, kebab-case, unique within the case. Never derived at render time. */
 	id: string;
@@ -55,7 +52,8 @@ export interface CaseDocument {
 	title: string;
 	summary: string;
 	language: 'de' | 'en';
-	map: CaseMap;
+	/** Reference to a reusable map resource shared by every case. */
+	mapId: MapDocumentId;
 	entities: CaseEntity[];
 	/** ISO-8601, UTC. Written by the storage layer on every save. */
 	createdAt: string;
@@ -78,7 +76,6 @@ export interface CaseIssue {
 	params?: Record<string, string | number>;
 }
 
-export const MAP_LIMITS = { min: 400, max: 6000 } as const;
 const MAX_TITLE_LENGTH = 120;
 const MAX_NAME_LENGTH = 80;
 const MAX_DESCRIPTION_LENGTH = 2000;
@@ -138,7 +135,6 @@ export function createCaseId(now: Date = new Date()): string {
 export interface CreateCaseInput {
 	title?: string;
 	language?: CaseDocument['language'];
-	map?: Partial<CaseMap>;
 	now?: Date;
 }
 
@@ -150,18 +146,11 @@ export function createEmptyCase(input: CreateCaseInput = {}): CaseDocument {
 		title: input.title?.trim() || 'Unbenannter Fall',
 		summary: '',
 		language: input.language ?? 'de',
-		map: {
-			width: clamp(input.map?.width ?? 2400, MAP_LIMITS.min, MAP_LIMITS.max),
-			height: clamp(input.map?.height ?? 1600, MAP_LIMITS.min, MAP_LIMITS.max)
-		},
+		mapId: SHARED_MAP_DOCUMENT.id,
 		entities: [],
 		createdAt: now,
 		updatedAt: now
 	};
-}
-
-function clamp(value: number, min: number, max: number): number {
-	return Math.min(max, Math.max(min, Math.round(value)));
 }
 
 function isFiniteNumber(value: unknown): value is number {
@@ -208,20 +197,10 @@ export function validateCase(document: CaseDocument): CaseIssue[] {
 	if (document.language !== 'de' && document.language !== 'en') {
 		error('language', 'Sprache muss "de" oder "en" sein', 'language.invalid');
 	}
-	if (!isFiniteNumber(document.map?.width) || !isFiniteNumber(document.map?.height)) {
-		error('map', 'Kartenmaße fehlen', 'map.missing');
-	} else {
-		for (const axis of ['width', 'height'] as const) {
-			const value = document.map[axis];
-			if (value < MAP_LIMITS.min || value > MAP_LIMITS.max) {
-				error(
-					`map.${axis}`,
-					`muss zwischen ${MAP_LIMITS.min} und ${MAP_LIMITS.max} liegen`,
-					'map.range',
-					{ min: MAP_LIMITS.min, max: MAP_LIMITS.max }
-				);
-			}
-		}
+	if (document.mapId !== SHARED_MAP_DOCUMENT.id) {
+		error('mapId', `unbekannte Karte "${String(document.mapId)}"`, 'map.id', {
+			id: String(document.mapId)
+		});
 	}
 
 	const seen = new Set<string>();
@@ -260,8 +239,8 @@ export function validateCase(document: CaseDocument): CaseIssue[] {
 		} else if (
 			entity.position.x < 0 ||
 			entity.position.y < 0 ||
-			entity.position.x > document.map.width ||
-			entity.position.y > document.map.height
+			entity.position.x > SHARED_MAP_DOCUMENT.width ||
+			entity.position.y > SHARED_MAP_DOCUMENT.height
 		) {
 			error(`${at}.position`, 'liegt außerhalb der Karte', 'entity.position.outside');
 		}
@@ -373,6 +352,49 @@ const MIGRATIONS: Record<number, (raw: Record<string, unknown>) => Record<string
 			createdAt: typeof raw.createdAt === 'string' ? raw.createdAt : now,
 			updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : now
 		};
+	},
+	// Version 1 stored map bounds on every case. Move existing coordinates
+	// proportionally to the one shared map and remove the per-case map data.
+	1: (raw) => {
+		const oldMap =
+			typeof raw.map === 'object' && raw.map !== null ? (raw.map as Record<string, unknown>) : {};
+		const oldWidth =
+			typeof oldMap.width === 'number' && Number.isFinite(oldMap.width) && oldMap.width > 0
+				? oldMap.width
+				: SHARED_MAP_DOCUMENT.width;
+		const oldHeight =
+			typeof oldMap.height === 'number' && Number.isFinite(oldMap.height) && oldMap.height > 0
+				? oldMap.height
+				: SHARED_MAP_DOCUMENT.height;
+		const scalePosition = (entity: unknown) => {
+			if (typeof entity !== 'object' || entity === null) return entity;
+			const item = entity as Record<string, unknown>;
+			if (typeof item.position !== 'object' || item.position === null) return entity;
+			const position = item.position as Record<string, unknown>;
+			const x = typeof position.x === 'number' && Number.isFinite(position.x) ? position.x : 0;
+			const y = typeof position.y === 'number' && Number.isFinite(position.y) ? position.y : 0;
+			return {
+				...item,
+				position: {
+					x: Math.min(
+						SHARED_MAP_DOCUMENT.width,
+						Math.max(0, (x / oldWidth) * SHARED_MAP_DOCUMENT.width)
+					),
+					y: Math.min(
+						SHARED_MAP_DOCUMENT.height,
+						Math.max(0, (y / oldHeight) * SHARED_MAP_DOCUMENT.height)
+					)
+				}
+			};
+		};
+		const migrated: Record<string, unknown> = {
+			...raw,
+			schemaVersion: 2,
+			mapId: SHARED_MAP_DOCUMENT.id,
+			entities: Array.isArray(raw.entities) ? raw.entities.map(scalePosition) : []
+		};
+		delete migrated.map;
+		return migrated;
 	}
 };
 
