@@ -68,6 +68,7 @@
 	display: none;
 }
 
+/* Must match COMPACT_MARKER_QUERY in src/lib/game/marker-placement.ts. */
 @media (max-width: 46rem), (max-height: 32rem) {
 	/* The selected item name is shown in its card; hide long labels on phones. */
 	.krimimap-map-marker__label {

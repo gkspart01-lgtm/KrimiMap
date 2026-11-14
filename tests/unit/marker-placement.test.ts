@@ -118,7 +118,7 @@ describe('findMarkerPosition', () => {
 	it('keeps distinct coordinates when all compact grid slots are occupied', () => {
 		const zoom = 0.15;
 		const entities: { position: { x: number; y: number } }[] = [];
-		for (let index = 0; index < 100; index += 1) {
+		for (let index = 0; index < 400; index += 1) {
 			const position = findMarkerPosition({
 				camera: { x: 1200, y: 800, zoom },
 				map,

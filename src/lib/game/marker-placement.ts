@@ -22,6 +22,10 @@ interface ScoredCandidate extends Candidate {
 }
 
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
+/** Screens this narrow or short drop marker labels; the detail lives in the panel. */
+export const COMPACT_MARKER_QUERY = '(max-width: 46rem), (max-height: 32rem)';
+/** Below this scale every viewport hides labels, so markers may sit close together. */
+export const LABEL_HIDDEN_BELOW_ZOOM = 0.25;
 const MAX_GRID_DIMENSION = 64;
 const MAX_SPIRAL_CANDIDATES = 4096;
 
@@ -126,9 +130,9 @@ export function findMarkerPosition(input: MarkerPlacementInput): MarkerPosition 
 	}
 
 	// If the normal lattice is crowded, search a deterministic screen-space
-	// spiral around the nearest legal point. It can find free cells between the
-	// lattice points; if the map is genuinely saturated, it still avoids exact
-	// coordinate reuse and chooses the point with the most clearance.
+	// spiral around the nearest legal point: it finds free cells between the
+	// lattice points, and once the map is saturated it returns the distinct
+	// point with the most clearance instead of a duplicate coordinate.
 	const origin = {
 		x: Math.min(maxX, Math.max(minX, safeCamera.x)),
 		y: Math.min(maxY, Math.max(minY, safeCamera.y))
@@ -147,5 +151,14 @@ export function findMarkerPosition(input: MarkerPlacementInput): MarkerPosition 
 	}
 
 	if (fallback) return { x: fallback.x, y: fallback.y };
+
+	// Saturated map: sweep the legal band at a fine pitch so the new entity still
+	// gets unique coordinates. Overlap is then unavoidable, but two markers never
+	// sit on exactly the same point.
+	for (let y = minY; y <= maxY; y += 8 / zoom) {
+		for (let x = minX; x <= maxX; x += 8 / zoom) {
+			if (!isDuplicate({ x, y })) return { x, y };
+		}
+	}
 	return { x: origin.x, y: origin.y };
 }

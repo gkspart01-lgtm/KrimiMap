@@ -8,7 +8,11 @@
 	import type { EntityKind } from '#lib/domain/case-document';
 	import { ENTITY_KINDS, ENTITY_KIND_COLORS } from '#lib/domain/case-document';
 	import { SHARED_MAP_DOCUMENT } from '#lib/domain/map-document';
-	import { findMarkerPosition } from '#lib/game/marker-placement';
+	import {
+		findMarkerPosition,
+		COMPACT_MARKER_QUERY,
+		LABEL_HIDDEN_BELOW_ZOOM
+	} from '#lib/game/marker-placement';
 	import { listCaseDocuments } from '#lib/storage/db';
 	import { debug } from '#lib/ui/debug.svelte';
 	import { formatNumber, t, tIssue } from '#lib/i18n/index.svelte';
@@ -175,7 +179,7 @@
 				height: host?.clientHeight ?? map.height * camera.zoom
 			},
 			compact:
-				window.matchMedia('(max-width: 46rem), (max-height: 32rem)').matches || camera.zoom < 0.25,
+				window.matchMedia(COMPACT_MARKER_QUERY).matches || camera.zoom < LABEL_HIDDEN_BELOW_ZOOM,
 			existing: store.current?.entities ?? []
 		});
 	}
