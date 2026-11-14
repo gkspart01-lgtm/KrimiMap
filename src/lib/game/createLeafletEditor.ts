@@ -1,7 +1,9 @@
 import L, { type Map as LeafletMap, type Marker as LeafletMarker } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import './leaflet-markers.css';
 import type { CaseDocument, CaseEntity, CasePoint } from '#lib/domain/case-document';
 import { SHARED_MAP_DOCUMENT } from '#lib/domain/map-document';
+import { COMPACT_MARKER_QUERY, LABEL_HIDDEN_BELOW_ZOOM } from '#lib/game/marker-placement';
 
 export interface CameraState {
 	x: number;
@@ -24,6 +26,7 @@ export interface EditorMapHandle {
 interface Options {
 	document: CaseDocument;
 	backgroundDocuments?: CaseDocument[];
+	editable?: boolean;
 	mapImage: string;
 	onCamera?: (camera: CameraState) => void;
 	onSelect?: (id: string | null) => void;
@@ -55,8 +58,8 @@ function createEntityIcon(entity: CaseEntity, inactive: boolean): L.DivIcon {
 	return L.divIcon({
 		className: 'krimimap-map-marker-icon',
 		html: root,
-		iconSize: [34, 34],
-		iconAnchor: [17, 17]
+		iconSize: [44, 44],
+		iconAnchor: [22, 22]
 	});
 }
 
@@ -106,12 +109,22 @@ export function createLeafletEditor(parent: HTMLElement, options: Options): Edit
 
 	let document = options.document;
 	let backgroundDocuments = options.backgroundDocuments ?? [];
+	const editable = options.editable ?? true;
 	let selectedId: string | null = null;
 	const activeLayer = L.layerGroup().addTo(map);
 	const inactiveLayer = L.layerGroup().addTo(map);
 	const activeMarkers = new Map<string, LeafletMarker>();
+	const compactMarkerMedia = window.matchMedia(COMPACT_MARKER_QUERY);
+	const updateCompactMarkers = (scale: number) => {
+		parent.dataset.compactMarkers = String(
+			scale < LABEL_HIDDEN_BELOW_ZOOM || compactMarkerMedia.matches
+		);
+	};
+	const onCompactMediaChange = () => updateCompactMarkers(Math.pow(2, map.getZoom()));
+	compactMarkerMedia.addEventListener('change', onCompactMediaChange);
 	const resizeObserver = new ResizeObserver(() => {
 		map.invalidateSize({ pan: false, debounceMoveend: true });
+		updateCompactMarkers(Math.pow(2, map.getZoom()));
 	});
 	resizeObserver.observe(parent);
 
@@ -128,6 +141,7 @@ export function createLeafletEditor(parent: HTMLElement, options: Options): Edit
 		parent.dataset.zoom = state.zoom.toFixed(4);
 		parent.dataset.cameraX = state.x.toFixed(2);
 		parent.dataset.cameraY = state.y.toFixed(2);
+		updateCompactMarkers(state.zoom);
 		options.onCamera?.(state);
 	};
 
@@ -135,15 +149,17 @@ export function createLeafletEditor(parent: HTMLElement, options: Options): Edit
 		marker: LeafletMarker,
 		entity: CaseEntity,
 		caseTitle: string,
-		inactive: boolean
+		inactive: boolean,
+		canEdit = true
 	) => {
 		const element = marker.getElement();
 		if (!element) return;
 		element.dataset.caseLayer = inactive ? 'inactive' : 'active';
 		element.dataset.caseId = caseTitle;
 		element.dataset.entityId = entity.id;
-		element.dataset.draggable = String(!inactive);
+		element.dataset.draggable = String(!inactive && canEdit);
 		element.style.pointerEvents = inactive ? 'none' : 'auto';
+		element.style.cursor = !inactive && canEdit ? 'grab' : 'pointer';
 		element.setAttribute('aria-hidden', String(inactive));
 		if (!inactive) {
 			element.setAttribute('role', 'button');
@@ -177,20 +193,22 @@ export function createLeafletEditor(parent: HTMLElement, options: Options): Edit
 			const marker = L.marker(pointToLatLng(entity.position), {
 				icon: createEntityIcon(entity, false),
 				keyboard: true,
-				draggable: true,
+				draggable: editable,
 				bubblingMouseEvents: false,
 				title: entity.name
 			});
-			marker.on('add', () => decorateMarker(marker, entity, document.title, false));
+			marker.on('add', () => decorateMarker(marker, entity, document.title, false, editable));
 			marker.on('click', () => options.onSelect?.(entity.id));
-			marker.on('dragstart', () => options.onSelect?.(entity.id));
-			marker.on('dragend', () => {
-				const position = marker.getLatLng();
-				options.onEntityMove?.(entity.id, {
-					x: position.lng,
-					y: SHARED_MAP_DOCUMENT.height - position.lat
+			if (editable) {
+				marker.on('dragstart', () => options.onSelect?.(entity.id));
+				marker.on('dragend', () => {
+					const position = marker.getLatLng();
+					options.onEntityMove?.(entity.id, {
+						x: position.lng,
+						y: SHARED_MAP_DOCUMENT.height - position.lat
+					});
 				});
-			});
+			}
 			activeLayer.addLayer(marker);
 			activeMarkers.set(entity.id, marker);
 		}
@@ -240,6 +258,7 @@ export function createLeafletEditor(parent: HTMLElement, options: Options): Edit
 			applySelection();
 		},
 		destroy() {
+			compactMarkerMedia.removeEventListener('change', onCompactMediaChange);
 			resizeObserver.disconnect();
 			map.remove();
 		}

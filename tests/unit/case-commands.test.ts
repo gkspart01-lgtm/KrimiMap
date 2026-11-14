@@ -7,6 +7,7 @@ import {
 	removeEntity,
 	renameCase,
 	unlinkEntities,
+	updateCaseChallenge,
 	updateCaseMeta,
 	updateEntity
 } from '#lib/domain/case-commands';
@@ -97,6 +98,21 @@ describe('updateEntity / moveEntity', () => {
 			updateEntity(document, document.entities[0].id, { kind: 'monster' as never })
 		).toThrow(/Unbekannte Art/);
 	});
+
+	it('clears the solution when the chosen character changes to another kind', () => {
+		let document = addEntity(
+			base(),
+			{ kind: 'character', name: 'Mara', position: { x: 50, y: 50 } },
+			later
+		);
+		const culpritId = document.entities[0].id;
+		document = updateCaseChallenge(document, { solutionEntityId: culpritId }, later);
+
+		const changed = updateEntity(document, culpritId, { kind: 'clue' }, later);
+
+		expect(changed.entities[0].kind).toBe('clue');
+		expect(changed.challenge.solutionEntityId).toBeNull();
+	});
 });
 
 describe('references', () => {
@@ -154,6 +170,21 @@ describe('removeEntity', () => {
 		expect(removed.entities[0].relatedEntityIds).toEqual([]);
 	});
 
+	it('removes the solution reference when its chosen character is deleted', () => {
+		let document = addEntity(
+			base(),
+			{ kind: 'character', name: 'Mara', position: { x: 50, y: 50 } },
+			later
+		);
+		const culpritId = document.entities[0].id;
+		document = updateCaseChallenge(document, { solutionEntityId: culpritId }, later);
+
+		const removed = removeEntity(document, culpritId, later);
+
+		expect(removed.entities).toEqual([]);
+		expect(removed.challenge.solutionEntityId).toBeNull();
+	});
+
 	it('is a no-op for unknown ids', () => {
 		const document = base();
 		expect(removeEntity(document, 'nope')).toBe(document);
@@ -171,5 +202,29 @@ describe('case metadata', () => {
 		expect(document.summary).toBe('Kurz');
 		expect(document.language).toBe('en');
 		expect(document.mapId).toBe('crime-city');
+	});
+
+	it('updates the objective, culprit and hint as one history-friendly command', () => {
+		const document = addEntity(
+			base(),
+			{ kind: 'character', name: 'Gärtner', position: { x: 50, y: 50 } },
+			later
+		);
+		const changed = updateCaseChallenge(
+			document,
+			{
+				objective: 'Wer hat den Schlüssel gestohlen?',
+				solutionEntityId: 'gaertner',
+				hint: 'Suche beim Bahnhof.'
+			},
+			later
+		);
+		expect(changed.challenge).toEqual({
+			objective: 'Wer hat den Schlüssel gestohlen?',
+			solutionEntityId: 'gaertner',
+			hint: 'Suche beim Bahnhof.'
+		});
+		expect(changed.updatedAt).toBe(later.toISOString());
+		expect(document.challenge).toEqual({ objective: '', solutionEntityId: null, hint: '' });
 	});
 });

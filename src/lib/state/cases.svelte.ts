@@ -12,6 +12,8 @@ import {
 	removeEntity,
 	renameCase,
 	updateEntity,
+	updateCaseMeta as updateMeta,
+	updateCaseChallenge as updateChallenge,
 	type NewEntityInput
 } from '#lib/domain/case-commands';
 import {
@@ -246,6 +248,14 @@ export function moveCaseEntity(id: string, position: { x: number; y: number }): 
 
 export function updateCaseEntity(id: string, patch: Parameters<typeof updateEntity>[2]): void {
 	apply((document) => updateEntity(document, id, patch));
+}
+
+export function updateCaseChallenge(patch: Parameters<typeof updateChallenge>[1]): void {
+	apply((document) => updateChallenge(document, patch));
+}
+
+export function updateCaseSummary(summary: string): void {
+	apply((document) => updateMeta(document, { summary }));
 }
 
 export function deleteCaseEntity(id: string): void {

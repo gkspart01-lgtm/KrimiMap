@@ -238,17 +238,70 @@ test('pinching over a marker zooms instead of dragging the marker', async ({ pag
 	await expect(coords).toHaveText(before);
 });
 
+test('the open mobile properties drawer stays above the map and clear of its toggle', async ({
+	page
+}) => {
+	await page.goto('/cases/');
+	await page.getByRole('button', { name: 'Neuer Fall' }).click();
+	await page.waitForURL((url) => url.pathname.endsWith('/editor/') && url.searchParams.has('id'));
+	await waitForMap(page);
+	const panel = page.getByTestId('editor-panel');
+	await page.getByRole('button', { name: '+ Hinweis' }).click();
+	await expect(panel).toHaveClass(/open/);
+	await expect(page.getByTestId('entity-form')).toBeVisible();
+	await panel.evaluate(async (element) => {
+		await Promise.all(element.getAnimations().map((animation) => animation.finished));
+	});
+
+	const layering = await page.evaluate(() => {
+		const drawer = document.querySelector('[data-testid="editor-panel"]')!;
+		const panelRect = drawer.getBoundingClientRect();
+		const marker = document.querySelector('.krimimap-map-marker')!;
+		const markerRect = marker.getBoundingClientRect();
+		const hit = document.elementFromPoint(
+			markerRect.left + markerRect.width / 2,
+			markerRect.top + markerRect.height / 2
+		);
+		return {
+			markerOverlapsDrawer:
+				markerRect.left < panelRect.right &&
+				markerRect.right > panelRect.left &&
+				markerRect.top < panelRect.bottom &&
+				markerRect.bottom > panelRect.top,
+			topmostPointBelongsToDrawer: drawer.contains(hit)
+		};
+	});
+	expect(layering.markerOverlapsDrawer).toBe(true);
+	expect(layering.topmostPointBelongsToDrawer).toBe(true);
+
+	const geometry = await page.evaluate(() => {
+		const drawer = document.querySelector('[data-testid="editor-panel"]')!.getBoundingClientRect();
+		const button = document.querySelector('.panel-toggle')!.getBoundingClientRect();
+		return {
+			overlap: Math.max(
+				0,
+				Math.min(drawer.bottom, button.bottom) - Math.max(drawer.top, button.top)
+			),
+			drawer: drawer.toJSON(),
+			button: button.toJSON(),
+			viewport: { height: innerHeight },
+			workspace: document.querySelector('.workspace')!.getBoundingClientRect().toJSON()
+		};
+	});
+	expect(geometry.overlap, JSON.stringify(geometry)).toBe(0);
+});
+
 test('touch tap selects a marker and a second tap on empty map clears it', async ({ page }) => {
 	await page.goto('/cases/');
 	await page.getByRole('button', { name: 'Neuer Fall' }).click();
-	await page.waitForURL(/\/editor\/\?id=/);
+	await page.waitForURL((url) => url.pathname.endsWith('/editor/') && url.searchParams.has('id'));
 	await waitForMap(page);
 
 	await page.getByRole('button', { name: '+ Hinweis' }).click();
 	await expect(page.getByTestId('entity-form')).toBeVisible();
 	const coords = page.getByTestId('entity-form').locator('.coords');
 	const text = (await coords.textContent()) ?? '';
-	const match = /x (\d+) · y (\d+)/.exec(text);
+	const match = /x ([0-9]+) · y ([0-9]+)/.exec(text);
 	if (!match) throw new Error(`unexpected marker coordinates: ${text}`);
 	const world = { x: Number(match[1]), y: Number(match[2]) };
 

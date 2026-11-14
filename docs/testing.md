@@ -35,10 +35,9 @@ it produce failures that look like rendering bugs.
 - `spike-attempts.test.ts` — retry loop with a fake engine, request shape per
   structured mode, "schema violations are not accepted".
 - `case-document.test.ts` — schema validation (ids, kinds, colours, positions,
-  references, self-reference), slug/unique ids, and the migration boundary
-  including "refuse a document from a newer version".
-- `case-commands.test.ts` — the pure edit commands: add/update/move/remove,
-  reference cleanup on delete, clamping, immutability, `updatedAt` bumps.
+  references and challenge solutions), slug/unique ids, and v0-v2 migrations.
+- `case-commands.test.ts` — pure edits, challenge updates, reference cleanup,
+  clamping, immutability and `updatedAt` bumps.
 - `case-json.test.ts` — round trip, size limit, broken JSON, foreign files,
   schema errors with exact paths, identity collisions on import.
 - `case-storage.test.ts` — the IndexedDB repository against `fake-indexeddb`:
@@ -49,13 +48,10 @@ it produce failures that look like rendering bugs.
   only claimed when a worker controls the page.
 
 Coverage is measured for the framework-free modules only
-(`src/lib/game/camera.ts`, `src/lib/game/map-controller.ts`,
-`src/lib/ai/contracts/case-draft.ts`, `src/lib/pwa/status.ts`) with thresholds of
-95 % statements/lines/ functions and 85 % branches. Browser adapters
-(`createEditorGame`, the WebLLM runtime, the service-worker registration) cannot
-run in Node and are covered by the browser suite instead — do not lower the
-thresholds to make them pass; add a test or move the logic into a testable
-module.
+(`src/lib/domain/map-document.ts`, `src/lib/ai/contracts/case-draft.ts`,
+`src/lib/pwa/status.ts`) with thresholds of 95 % statements/lines/functions and
+85 % branches. The domain model and storage are also covered by unit tests;
+Leaflet adapters, route behavior and gestures are covered in the browser suite.
 
 ## Browser tests (Playwright)
 
@@ -65,12 +61,7 @@ project it serves `.svelte-kit/output/client`, so the service worker and the
 Workbox runtime — which only exist in the adapter output `build/` — return 404
 and the PWA tests would fail against a perfectly good build.
 
-- **desktop project** (1280×800, mouse): canvas fills its container at device
-  resolution, a drag moves the map by exactly the pointer distance, wheel zoom
-  keeps the world point under the cursor, zoom buttons scale by 1.25 and respect
-  the limits, "Ganze Karte" refits, a drag starting on the info panel still
-  pans, navigation works, the WebGPU fallback message is honest, and no request
-  leaves the static origin.
+- **desktop project** (1280×800, mouse): Leaflet loads the local map image, a drag moves the map by the pointer distance, wheel zoom stays anchored, zoom buttons respect limits, "Ganze Karte" refits, active markers can be selected/moved, and no request leaves the static origin.
 - **cases flow** (`cases.spec.ts`): create a case, add an entity, reload and find
   it again, edit while offline, import a version-0 draft (migrated), reject a
   broken import with a readable message, delete a case, and switch the UI to
@@ -78,14 +69,15 @@ and the PWA tests would fail against a perfectly good build.
 - **mouse selection** (`entity-selection.spec.ts`): click an existing marker to
   open its form, click empty map to clear selection, and reselect the marker by
   its world-to-screen position.
-- **mobile project** (Pixel 5, touch): canvas renders at the phone pixel ratio,
-  one-finger drag pans at initial fit and when zoomed (including the map's
-  viewport margin), two-finger pinch zooms in and out around the midpoint,
-  tap selects/deselects an entity, and pinching with either finger order on an
-  entity leaves that entity unmoved. Multi-touch goes through the DevTools protocol
-  (`Input.dispatchTouchEvent`) because Playwright's `touchscreen` helper can only
-  tap; the CDP session is reused per page because Chromium tracks the touch
-  stream per session.
+- **playtest flow** (`playtest.spec.ts`): author a premise/objective/culprit/hint,
+  inspect a clue, verify progress, reveal the hint, submit wrong and correct
+  deductions, return to the editor, ensure culprit deletion/kind changes preserve
+  autosave and unsaved challenge edits cannot start a stale playtest, then repeat
+  the core workflow offline with a JSON export/import round trip.
+- **mobile playtest** (`playtest.mobile.spec.ts`): keep default clue/culprit markers apart, ensure 44 px touch targets and enough room for ten phone-sized markers, separate the bottom-sheet from the map, reveal and auto-scroll the hint card fully into view without the PWA notice covering it, tap a read-only clue marker, and submit the correct deduction.
+- **PWA update** (`offline.spec.ts`): install a waiting service-worker update
+  during an edited case, accept it, and verify the case remains in IndexedDB.
+- **mobile project** (Pixel 5, touch): map image fits the phone view, one-finger drag pans at initial fit and when zoomed, two-finger pinch zooms in and out around the midpoint, tap selects/deselects entities, and pinch does not move a marker. The open properties drawer stays above Leaflet layers and its toggle does not cover fields. Multi-touch uses a reused CDP session per page.
 
 The map publishes its camera on the container element (`data-zoom`,
 `data-camera-x`, `data-camera-y`), which is what the tests read. That is a

@@ -45,6 +45,7 @@ All project documentation and repository content shall be maintained in English.
 - **FR-11 — Case flow (Must):** A playable case shall present its premise and objectives, allow evidence gathering, and provide a way to submit a deduction or answer.
 - **FR-12 — Hints and progress (Should):** The game should offer optional hints and communicate case progress or completion.
 - **FR-13 — Authored content variety (Should):** Case data shall allow different settings, characters, clues, events, and timelines without requiring a new application build for each case.
+- **FR-21 — Creator playtest (Must):** A creator shall be able to play a case using the same shared map and case data. Players can inspect map entities, track discovered clues, reveal an optional hint by choice, and submit a culprit character as their deduction; the player UI reports success or an incorrect guess and does not display the stored solution before submission, then provides a route back to editing. Because the case is local and editable, this UI behavior is not a security boundary against inspection or export. The first playable rule requires at least one clue to be discovered before a deduction is accepted.
 
 ### 4.3 AI assistance
 
@@ -97,6 +98,7 @@ The first release is acceptable when all of the following are demonstrated:
 - **AC-10 — Offline core:** After the static app shell and required assets have been installed/cached, disconnecting the network does not prevent creating, editing, saving, reopening, exporting, importing, or playtesting a local case. These workflows make no request to a KrimiMap-owned backend.
 - **AC-11 — AI modes:** Local AI makes no network requests after the selected model is present locally. If local inference is unavailable, cloud AI is only used after the user selects it, supplies a key, and accepts the data disclosure; an error never triggers silent cloud fallback.
 - **AC-12 — Shared map:** Two cases created on the first-release map reference the same `MapDocument`; when one is open, the other case's entities are visibly dimmed and cannot be selected or moved, while active-case entities remain editable.
+- **AC-13 — Playtest:** A case with an objective, at least one clue, and a character solution can be played from the editor; clue discovery gates deduction, an optional hint is user-requested, right/wrong answers are reported, and returning to the editor retains the saved case.
 
 Specific browser versions, screen sizes, map scale, entity counts, performance limits, and offline installation targets must be agreed before final release acceptance.
 
@@ -110,7 +112,7 @@ Specific browser versions, screen sizes, map scale, entity counts, performance l
 6. **Supported browsers/devices:** Set the minimum browser versions, viewport sizes, and representative mid-range phone for acceptance tests.
 7. **Case format and storage:** Confirm the JSON candidate and compatibility/versioning policy.
 8. **Content licensing:** Define separate licenses/terms for user-authored cases, generated assets, bundled art, and other third-party media; the application source code license is MIT.
-9. **Game rules:** Define required deduction/question formats, scoring, hints, and the rules by which a case is considered solvable.
+9. **Further game rules:** Beyond the first playtest slice (discover a clue, optionally reveal one hint, choose the culprit), define scoring, multi-step deductions, replay/progress persistence, and how solvability is validated.
 10. **Sharing:** Decide later whether users need online publishing/sharing or moderation; these are not required by the offline baseline.
 
 ## Sources

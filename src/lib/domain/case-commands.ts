@@ -11,6 +11,7 @@ import {
 	ENTITY_KINDS,
 	type CaseDocument,
 	type CaseEntity,
+	type CaseChallenge,
 	type CasePoint,
 	type EntityKind,
 	slugify,
@@ -47,6 +48,14 @@ export function updateCaseMeta(
 		},
 		now
 	);
+}
+
+export function updateCaseChallenge(
+	document: CaseDocument,
+	patch: Partial<CaseChallenge>,
+	now: Date = new Date()
+): CaseDocument {
+	return touch({ ...document, challenge: { ...document.challenge, ...patch } }, now);
 }
 
 export interface NewEntityInput {
@@ -101,13 +110,18 @@ export function updateEntity(
 	now: Date = new Date()
 ): CaseDocument {
 	let changed = false;
+	let clearSolution = false;
 	const entities = document.entities.map((entity) => {
 		if (entity.id !== id) return entity;
 		changed = true;
+		const kind = patch.kind ? entityKindOrThrow(patch.kind) : entity.kind;
+		if (document.challenge.solutionEntityId === id && kind !== 'character') {
+			clearSolution = true;
+		}
 		return {
 			...entity,
 			...patch,
-			kind: patch.kind ? entityKindOrThrow(patch.kind) : entity.kind,
+			kind,
 			position: patch.position
 				? {
 						x: clampToMap(patch.position.x, SHARED_MAP_DOCUMENT.width),
@@ -120,7 +134,10 @@ export function updateEntity(
 		};
 	});
 	if (!changed) return document;
-	return touch({ ...document, entities }, now);
+	const challenge = clearSolution
+		? { ...document.challenge, solutionEntityId: null }
+		: document.challenge;
+	return touch({ ...document, entities, challenge }, now);
 }
 
 export function moveEntity(
@@ -149,7 +166,11 @@ export function removeEntity(
 					}
 				: entity
 		);
-	return touch({ ...document, entities }, now);
+	const challenge =
+		document.challenge.solutionEntityId === id
+			? { ...document.challenge, solutionEntityId: null }
+			: document.challenge;
+	return touch({ ...document, entities, challenge }, now);
 }
 
 export function linkEntities(

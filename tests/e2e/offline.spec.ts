@@ -1,3 +1,5 @@
+import { readFile, writeFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import { collectProblems, waitForMap } from './helpers';
 
@@ -41,6 +43,8 @@ test('the app reloads and opens the editor with the network disabled', async ({
 
 	await context.setOffline(true);
 
+	await page.goto('/?utm_source=playtest');
+	await expect(page.getByRole('heading', { level: 1 })).toContainText('KrimiMap');
 	await page.reload({ waitUntil: 'domcontentloaded' });
 	await expect(page.getByRole('heading', { level: 1 })).toContainText('KrimiMap');
 	await expect(page.getByTestId('connection-status')).toHaveAttribute('data-connection', 'offline');
@@ -78,6 +82,47 @@ test('serves the manifest and the icon set from the same origin', async ({ page 
 	for (const icon of manifest.icons as { src: string }[]) {
 		const iconResponse = await page.request.get(new URL(icon.src, page.url()).toString());
 		expect(iconResponse.ok(), `icon ${icon.src} must exist`).toBe(true);
+	}
+});
+
+test('a service-worker update keeps locally saved cases', async ({ page }) => {
+	const workerPath = resolve(process.cwd(), 'build/sw.js');
+	const originalScript = await readFile(workerPath, 'utf8');
+	try {
+		await primeShell(page);
+		await page.getByRole('link', { name: 'Fälle' }).click();
+		await page.waitForURL((url) => url.pathname.endsWith('/cases/'));
+		await page.getByRole('button', { name: 'Neuer Fall' }).click();
+		await page.waitForURL((url) => url.pathname.endsWith('/editor/') && url.searchParams.has('id'));
+		await waitForMap(page);
+		await page.getByRole('textbox', { name: 'Titel des Falls' }).fill('Bleibt lokal erhalten');
+		await expect(page.getByTestId('save-state')).toHaveAttribute('data-state', 'saved');
+
+		// Change only the worker bytes. The static server serves from build/ on
+		// every request, so registration.update() installs a waiting successor.
+		await writeFile(workerPath, `${originalScript}\n// Playwright update probe`);
+		await page.evaluate(async () => {
+			const registration = await navigator.serviceWorker.getRegistration();
+			if (!registration) throw new Error('service worker registration missing');
+			await registration.update();
+		});
+		await expect
+			.poll(() =>
+				page.evaluate(async () => {
+					const registration = await navigator.serviceWorker.getRegistration();
+					return registration?.waiting?.state ?? 'none';
+				})
+			)
+			.toBe('installed');
+
+		await expect(page.getByTestId('pwa-banner')).toHaveAttribute('data-phase', 'update-available');
+		await page.getByRole('button', { name: 'Neu laden' }).click();
+		await waitForMap(page);
+		await expect(page.getByRole('textbox', { name: 'Titel des Falls' })).toHaveValue(
+			'Bleibt lokal erhalten'
+		);
+	} finally {
+		await writeFile(workerPath, originalScript);
 	}
 });
 

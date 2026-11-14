@@ -13,7 +13,7 @@ files plus an installable PWA, and local inference is the preferred AI mode.
 Repository content, code comments and docs are in English; the UI ships German
 and English.
 
-## Current state — shared-map editor (Phase 3)
+## Current state — playtest vertical slice (Phase 4)
 
 Implemented:
 
@@ -41,21 +41,18 @@ Implemented:
 - `npm run verify` as the single gate: lint, types, formatting, unit tests with
   coverage thresholds, static build, browser tests including the offline reload.
 
-- **Cases are real documents now**: a versioned `CaseDocument` (framework-free
-  rules, migration boundary, ~130 unit tests), an IndexedDB repository, and safe
-  JSON import/export (2 MiB limit, validation before storing, imported ids that
-  never overwrite an existing case).
-- **German and English**: every user-visible string lives in `src/lib/i18n`, the
-  header switches language at any time and remembers it; validation diagnostics
-  carry a `code` so the panel can translate them too.
-- **Cases share one map**: schema v2 cases reference the static `crime-city`
-  `MapDocument`; legacy per-case coordinates migrate proportionally. The current
-  case's objects are editable; all other cases' objects appear dimmed behind and
-  cannot be selected or moved. The editor supports mouse/touch selection, marker
-  dragging, property edits, validation, autosave, undo and redo.
-
-Not implemented yet (next phases): named layers and timeline events, playtest mode,
-and AI generation inside the editor.
+- **Cases and playtest are local documents**: schema v3 stores the shared map
+  reference, a case objective, solution character and optional hint. Existing
+  schema v0–v2 cases migrate on import and read from IndexedDB. JSON export/import
+  retains challenge data and never overwrites an existing case id.
+- **Cases share one map**: cases reference `crime-city`; objects of other cases
+  are shown dimmed in the editor and remain non-interactive. Only the current
+  case's objects can be selected and changed.
+- **Playtest at `/play?id=…`**: inspect map entries, discover clues, reveal an
+  optional hint, submit a culprit deduction and return to the editor. The local
+  map image, route and case CRUD/export/import work offline after the app is cached.
+- **German and English**: UI strings live in `src/lib/i18n`; validation diagnostics
+  use stable codes so they can be translated as well.
 
 ## Commands
 
