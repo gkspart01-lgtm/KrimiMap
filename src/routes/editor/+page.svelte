@@ -13,11 +13,13 @@
 		COMPACT_MARKER_QUERY,
 		LABEL_HIDDEN_BELOW_ZOOM
 	} from '#lib/game/marker-placement';
+	import AiDraftPanel from '#lib/components/AiDraftPanel.svelte';
 	import { listCaseDocuments } from '#lib/storage/db';
 	import { debug } from '#lib/ui/debug.svelte';
 	import { formatNumber, t, tIssue } from '#lib/i18n/index.svelte';
 	import {
 		addEntityAtCenter,
+		applyCaseDraftToCurrent,
 		caseStore,
 		createCase,
 		deleteCaseEntity,
@@ -197,6 +199,13 @@
 		const selected = store.selected;
 		if (!selected) return;
 		updateCaseEntity(selected.id, patch);
+	}
+
+	let aiOpen = $state(false);
+
+	function applyDraft(draft: Parameters<typeof applyCaseDraftToCurrent>[0]) {
+		applyCaseDraftToCurrent(draft);
+		aiOpen = false;
 	}
 
 	function startPlaytest() {
@@ -410,7 +419,12 @@
 			<button onclick={() => handle?.zoomOut()} aria-label="Herauszoomen">−</button>
 			<button onclick={() => handle?.zoomIn()} aria-label="Hineinzoomen">+</button>
 			<button onclick={() => handle?.fit()}>Ganze Karte</button>
+			<button data-testid="ai-open" onclick={() => (aiOpen = true)}>{t('ai.title')}</button>
 		</div>
+
+		{#if aiOpen}
+			<AiDraftPanel onapply={applyDraft} onclose={() => (aiOpen = false)} />
+		{/if}
 
 		{#if !ready && !fatal}
 			<div class="overlay muted">{t('editor.loading')}</div>

@@ -13,7 +13,7 @@ until you know what failed first.
 - `scripts/build-sw.mjs` — runs after `vite build` and generates `build/sw.js`
   plus the Workbox runtime with `generateSW`. Precache: every emitted
   `html/js/css/svg/png/ico/woff2/webmanifest/json` up to 2 MiB
-  (48 entries, ~406 KiB in the latest verified build; the optional WebLLM chunk
+  (51 entries, ~419 KiB in the latest verified build; the optional WebLLM chunk
   is reported and excluded).
 - `src/lib/pwa/register.ts` — registration, update detection, `SKIP_WAITING`
   hand-shake.

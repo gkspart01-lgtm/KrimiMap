@@ -12,6 +12,26 @@ export type Locale = (typeof LOCALES)[number];
 type Messages = Record<string, string>;
 
 const de: Messages = {
+	'ai.title': 'KI-Entwurf',
+	'ai.intro':
+		'Läuft lokal im Browser: Das Modell wird erst nach deinem Klick geladen, nichts wird hochgeladen. Jeder Entwurf ist nur ein Vorschlag.',
+	'ai.topic.label': 'Thema oder Fallidee',
+	'ai.topic.placeholder': 'Ein Förster verschwindet im Nebelwald',
+	'ai.generate': 'Entwurf erzeugen',
+	'ai.cancel': 'Abbrechen',
+	'ai.close': 'Schließen',
+	'ai.checking': 'Prüfe, ob dieses Gerät lokale KI ausführen kann …',
+	'ai.unavailable': 'Lokale KI ist hier nicht verfügbar',
+	'ai.working': 'Das Modell schreibt …',
+	'ai.apply': 'In den Fall übernehmen',
+	'ai.discard': 'Verwerfen',
+	'ai.preview.title': 'Vorschlag',
+	'ai.preview.characters': 'Figuren',
+	'ai.preview.clues': 'Hinweise',
+	'ai.preview.solution': 'Lösung',
+	'ai.repairs': 'Automatisch korrigiert',
+	'ai.not.applied': 'Nichts wird übernommen, bis du es bestätigst.',
+
 	'nav.cases': 'Fälle',
 	'nav.editor': 'Editor',
 	'nav.debug.label': 'Debug-Ansicht umschalten',
@@ -143,6 +163,26 @@ const de: Messages = {
 };
 
 const en: Messages = {
+	'ai.title': 'AI draft',
+	'ai.intro':
+		'Runs locally in your browser: the model downloads only after you ask for it, nothing is uploaded. Every draft is just a proposal.',
+	'ai.topic.label': 'Topic or case idea',
+	'ai.topic.placeholder': 'A forester disappears in the fog forest',
+	'ai.generate': 'Generate draft',
+	'ai.cancel': 'Cancel',
+	'ai.close': 'Close',
+	'ai.checking': 'Checking whether this device can run local AI …',
+	'ai.unavailable': 'Local AI is not available here',
+	'ai.working': 'The model is writing …',
+	'ai.apply': 'Add to the case',
+	'ai.discard': 'Discard',
+	'ai.preview.title': 'Proposal',
+	'ai.preview.characters': 'Characters',
+	'ai.preview.clues': 'Clues',
+	'ai.preview.solution': 'Solution',
+	'ai.repairs': 'Fixed automatically',
+	'ai.not.applied': 'Nothing is added until you confirm it.',
+
 	'nav.cases': 'Cases',
 	'nav.editor': 'Editor',
 	'nav.debug.label': 'Toggle debug view',
