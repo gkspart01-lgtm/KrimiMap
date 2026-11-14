@@ -50,8 +50,11 @@
 			</ul>
 			{#if buildLabel}
 				<p class="small muted" data-testid="build-info">
-					{t('landing.debug.build')}: {stampParts.join(' · ')}{#if commitUrl}
-						· <a href={commitUrl} target="_blank" rel="noreferrer"><code>{shortSha}</code></a>{/if}
+					{t('landing.debug.build')}: {stampParts.join(' · ')}{#if commitUrl}<span> · </span><a
+							href={commitUrl}
+							target="_blank"
+							rel="noreferrer"><code>{shortSha}</code></a
+						>{/if}
 				</p>
 			{/if}
 		</div>
