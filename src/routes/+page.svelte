@@ -49,14 +49,23 @@
 				<li>{t('landing.debug.webgpu')}</li>
 			</ul>
 			{#if buildLabel}
-				<p class="small muted" data-testid="build-info">
-					{t('landing.debug.build')}: {stampParts.join(' · ')}{#if commitUrl}<span> · </span><a
-							href={commitUrl}
-							target="_blank"
-							rel="noreferrer"><code>{shortSha}</code></a
-						>{/if}
+				<p class="small muted build-stamp" data-testid="build-info">
+					<span>{t('landing.debug.build')}: {stampParts.join(' · ')}</span>
+					{#if commitUrl}
+						<span aria-hidden="true">·</span>
+						<a href={commitUrl} target="_blank" rel="noreferrer"><code>{shortSha}</code></a>
+					{/if}
 				</p>
 			{/if}
 		</div>
 	{/if}
 </div>
+
+<style>
+	.build-stamp {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		gap: 0.35rem;
+	}
+</style>
