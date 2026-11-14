@@ -2,7 +2,7 @@
  * The case document: the single source of truth for everything the editor
  * writes and the player reads.
  *
- * Framework-free on purpose — no Svelte, no Phaser, no IndexedDB. That keeps the
+ * Framework-free on purpose — no Svelte, Leaflet, or IndexedDB. That keeps the
  * rules unit-testable in Node and stops the storage/UI layers from inventing
  * their own idea of what a case is.
  */
@@ -10,7 +10,7 @@
 import { SHARED_MAP_DOCUMENT, type MapDocumentId } from './map-document';
 
 /** Bumped whenever the stored shape changes in a way that needs a migration. */
-export const CASE_SCHEMA_VERSION = 2;
+export const CASE_SCHEMA_VERSION = 3;
 
 export const ENTITY_KINDS = ['character', 'clue', 'object', 'location'] as const;
 export type EntityKind = (typeof ENTITY_KINDS)[number];
@@ -46,6 +46,15 @@ export interface CaseEntity {
 	relatedEntityIds: string[];
 }
 
+export interface CaseChallenge {
+	/** What players should solve, e.g. identify the culprit. */
+	objective: string;
+	/** Character entity id that is the correct deduction. */
+	solutionEntityId: string | null;
+	/** Optional spoiler hint, shown only after the player asks for it. */
+	hint: string;
+}
+
 export interface CaseDocument {
 	schemaVersion: number;
 	id: string;
@@ -54,6 +63,7 @@ export interface CaseDocument {
 	language: 'de' | 'en';
 	/** Reference to a reusable map resource shared by every case. */
 	mapId: MapDocumentId;
+	challenge: CaseChallenge;
 	entities: CaseEntity[];
 	/** ISO-8601, UTC. Written by the storage layer on every save. */
 	createdAt: string;
@@ -79,6 +89,8 @@ export interface CaseIssue {
 const MAX_TITLE_LENGTH = 120;
 const MAX_NAME_LENGTH = 80;
 const MAX_DESCRIPTION_LENGTH = 2000;
+const MAX_OBJECTIVE_LENGTH = 500;
+const MAX_HINT_LENGTH = 1000;
 
 const KEBAB = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const HEX_COLOR = /^#[0-9a-f]{6}$/i;
@@ -147,6 +159,7 @@ export function createEmptyCase(input: CreateCaseInput = {}): CaseDocument {
 		summary: '',
 		language: input.language ?? 'de',
 		mapId: SHARED_MAP_DOCUMENT.id,
+		challenge: { objective: '', solutionEntityId: null, hint: '' },
 		entities: [],
 		createdAt: now,
 		updatedAt: now
@@ -201,6 +214,53 @@ export function validateCase(document: CaseDocument): CaseIssue[] {
 		error('mapId', `unbekannte Karte "${String(document.mapId)}"`, 'map.id', {
 			id: String(document.mapId)
 		});
+	}
+	if (typeof document.challenge !== 'object' || document.challenge === null) {
+		error('challenge', 'Spielziel fehlt', 'challenge.missing');
+	} else {
+		if (typeof document.challenge.objective !== 'string') {
+			error('challenge.objective', 'Spielziel muss Text sein', 'challenge.objective.type');
+		} else if (document.challenge.objective.length > MAX_OBJECTIVE_LENGTH) {
+			error(
+				'challenge.objective',
+				`Spielziel ist länger als ${MAX_OBJECTIVE_LENGTH} Zeichen`,
+				'challenge.objective.long',
+				{ max: MAX_OBJECTIVE_LENGTH }
+			);
+		}
+		if (typeof document.challenge.hint !== 'string') {
+			error('challenge.hint', 'Hinweis muss Text sein', 'challenge.hint.type');
+		} else if (document.challenge.hint.length > MAX_HINT_LENGTH) {
+			error(
+				'challenge.hint',
+				`Hinweis ist länger als ${MAX_HINT_LENGTH} Zeichen`,
+				'challenge.hint.long',
+				{ max: MAX_HINT_LENGTH }
+			);
+		}
+		const solutionId = document.challenge.solutionEntityId;
+		if (solutionId !== null && typeof solutionId !== 'string') {
+			error(
+				'challenge.solutionEntityId',
+				'Lösung muss eine Figuren-ID oder leer sein',
+				'challenge.solution.type'
+			);
+		} else if (typeof solutionId === 'string') {
+			const solution = document.entities?.find((entity) => entity.id === solutionId);
+			if (!solution) {
+				error(
+					'challenge.solutionEntityId',
+					'Lösungsfigur wurde nicht gefunden',
+					'challenge.solution.unknown'
+				);
+			} else if (solution.kind !== 'character') {
+				error(
+					'challenge.solutionEntityId',
+					'Die Lösung muss eine Figur sein',
+					'challenge.solution.kind'
+				);
+			}
+		}
 	}
 
 	const seen = new Set<string>();
@@ -395,6 +455,23 @@ const MIGRATIONS: Record<number, (raw: Record<string, unknown>) => Record<string
 		};
 		delete migrated.map;
 		return migrated;
+	},
+	// Version 2 adds the authored objective, culprit and optional player hint.
+	2: (raw) => {
+		const challenge =
+			typeof raw.challenge === 'object' && raw.challenge !== null
+				? (raw.challenge as Record<string, unknown>)
+				: {};
+		return {
+			...raw,
+			schemaVersion: 3,
+			challenge: {
+				objective: typeof challenge.objective === 'string' ? challenge.objective : '',
+				solutionEntityId:
+					typeof challenge.solutionEntityId === 'string' ? challenge.solutionEntityId : null,
+				hint: typeof challenge.hint === 'string' ? challenge.hint : ''
+			}
+		};
 	}
 };
 

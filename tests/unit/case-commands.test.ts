@@ -7,6 +7,7 @@ import {
 	removeEntity,
 	renameCase,
 	unlinkEntities,
+	updateCaseChallenge,
 	updateCaseMeta,
 	updateEntity
 } from '#lib/domain/case-commands';
@@ -171,5 +172,29 @@ describe('case metadata', () => {
 		expect(document.summary).toBe('Kurz');
 		expect(document.language).toBe('en');
 		expect(document.mapId).toBe('crime-city');
+	});
+
+	it('updates the objective, culprit and hint as one history-friendly command', () => {
+		const document = addEntity(
+			base(),
+			{ kind: 'character', name: 'Gärtner', position: { x: 50, y: 50 } },
+			later
+		);
+		const changed = updateCaseChallenge(
+			document,
+			{
+				objective: 'Wer hat den Schlüssel gestohlen?',
+				solutionEntityId: 'gaertner',
+				hint: 'Suche beim Bahnhof.'
+			},
+			later
+		);
+		expect(changed.challenge).toEqual({
+			objective: 'Wer hat den Schlüssel gestohlen?',
+			solutionEntityId: 'gaertner',
+			hint: 'Suche beim Bahnhof.'
+		});
+		expect(changed.updatedAt).toBe(later.toISOString());
+		expect(document.challenge).toEqual({ objective: '', solutionEntityId: null, hint: '' });
 	});
 });

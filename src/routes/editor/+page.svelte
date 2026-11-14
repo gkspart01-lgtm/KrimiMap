@@ -24,7 +24,9 @@
 		renameCurrentCase,
 		selectEntity,
 		undoCaseEdit,
-		updateCaseEntity
+		updateCaseEntity,
+		updateCaseChallenge,
+		updateCaseSummary
 	} from '#lib/state/cases.svelte';
 
 	const store = caseStore();
@@ -50,6 +52,19 @@
 						? t('save.saved')
 						: ''
 	);
+
+	const characters = $derived(
+		(store.current?.entities ?? []).filter((entity) => entity.kind === 'character')
+	);
+	const canPlaytest = $derived.by(() => {
+		const document = store.current;
+		if (!document?.challenge.objective.trim() || !document.challenge.solutionEntityId) return false;
+		return (
+			document.entities.some(
+				(entity) => entity.kind === 'character' && entity.id === document.challenge.solutionEntityId
+			) && document.entities.some((entity) => entity.kind === 'clue')
+		);
+	});
 
 	// Undo/redo shortcuts. Text fields keep their own undo, so the handler steps
 	// aside for inputs — only the document history responds here.
@@ -182,6 +197,12 @@
 		updateCaseEntity(selected.id, patch);
 	}
 
+	function startPlaytest() {
+		const id = store.current?.id;
+		if (!id || !canPlaytest) return;
+		void goto(`${resolve('play/')}?id=${id}`);
+	}
+
 	function deleteSelected() {
 		const selected = store.selected;
 		if (!selected) return;
@@ -272,6 +293,55 @@
 					aria-label={t('editor.redo')}
 					onclick={redoCaseEdit}>↷</button
 				>
+			</div>
+
+			<div class="challenge-form" data-testid="challenge-form">
+				<h2>{t('editor.challenge.title')}</h2>
+				<label>
+					<span>{t('editor.challenge.premise')}</span>
+					<textarea
+						rows="2"
+						value={store.current?.summary ?? ''}
+						oninput={(event) => updateCaseSummary(event.currentTarget.value)}></textarea>
+				</label>
+				<label>
+					<span>{t('editor.challenge.objective')}</span>
+					<textarea
+						rows="2"
+						value={store.current?.challenge.objective ?? ''}
+						oninput={(event) => updateCaseChallenge({ objective: event.currentTarget.value })}
+					></textarea>
+				</label>
+				<label>
+					<span>{t('editor.challenge.solution')}</span>
+					<select
+						value={store.current?.challenge.solutionEntityId ?? ''}
+						onchange={(event) =>
+							updateCaseChallenge({ solutionEntityId: event.currentTarget.value || null })}
+					>
+						<option value="">{t('editor.challenge.solution.none')}</option>
+						{#each characters as character (character.id)}
+							<option value={character.id}>{character.name}</option>
+						{/each}
+					</select>
+				</label>
+				<label>
+					<span>{t('editor.challenge.hint')}</span>
+					<textarea
+						rows="2"
+						value={store.current?.challenge.hint ?? ''}
+						oninput={(event) => updateCaseChallenge({ hint: event.currentTarget.value })}
+					></textarea>
+				</label>
+				<button
+					class="primary"
+					disabled={!canPlaytest}
+					data-testid="playtest-button"
+					onclick={startPlaytest}>{t('editor.challenge.playtest')}</button
+				>
+				<p class="muted small">
+					{t(canPlaytest ? 'editor.challenge.ready' : 'editor.challenge.incomplete')}
+				</p>
 			</div>
 
 			<div class="add-row">
@@ -606,6 +676,42 @@
 
 	button.add:hover {
 		background: color-mix(in srgb, var(--kind-color) 24%, transparent);
+	}
+
+	.challenge-form {
+		display: grid;
+		gap: 0.45rem;
+		padding: 0.65rem 0;
+		border-top: 1px solid var(--border);
+		border-bottom: 1px solid var(--border);
+	}
+
+	.challenge-form h2 {
+		margin: 0;
+		font-size: 0.9rem;
+	}
+
+	.challenge-form label {
+		display: grid;
+		gap: 0.2rem;
+		font-size: 0.72rem;
+		color: var(--text-dim);
+	}
+
+	.challenge-form textarea,
+	.challenge-form select {
+		width: 100%;
+		padding: 0.35rem 0.5rem;
+		border: 1px solid var(--border);
+		border-radius: 8px;
+		background: #0f1218;
+		color: var(--text);
+		font: inherit;
+		font-size: 0.82rem;
+	}
+
+	.challenge-form p {
+		margin: 0;
 	}
 
 	.entity-form {

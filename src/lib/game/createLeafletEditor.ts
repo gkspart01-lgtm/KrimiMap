@@ -24,6 +24,7 @@ export interface EditorMapHandle {
 interface Options {
 	document: CaseDocument;
 	backgroundDocuments?: CaseDocument[];
+	editable?: boolean;
 	mapImage: string;
 	onCamera?: (camera: CameraState) => void;
 	onSelect?: (id: string | null) => void;
@@ -106,6 +107,7 @@ export function createLeafletEditor(parent: HTMLElement, options: Options): Edit
 
 	let document = options.document;
 	let backgroundDocuments = options.backgroundDocuments ?? [];
+	const editable = options.editable ?? true;
 	let selectedId: string | null = null;
 	const activeLayer = L.layerGroup().addTo(map);
 	const inactiveLayer = L.layerGroup().addTo(map);
@@ -135,15 +137,17 @@ export function createLeafletEditor(parent: HTMLElement, options: Options): Edit
 		marker: LeafletMarker,
 		entity: CaseEntity,
 		caseTitle: string,
-		inactive: boolean
+		inactive: boolean,
+		canEdit = true
 	) => {
 		const element = marker.getElement();
 		if (!element) return;
 		element.dataset.caseLayer = inactive ? 'inactive' : 'active';
 		element.dataset.caseId = caseTitle;
 		element.dataset.entityId = entity.id;
-		element.dataset.draggable = String(!inactive);
+		element.dataset.draggable = String(!inactive && canEdit);
 		element.style.pointerEvents = inactive ? 'none' : 'auto';
+		element.style.cursor = !inactive && canEdit ? 'grab' : 'pointer';
 		element.setAttribute('aria-hidden', String(inactive));
 		if (!inactive) {
 			element.setAttribute('role', 'button');
@@ -177,20 +181,22 @@ export function createLeafletEditor(parent: HTMLElement, options: Options): Edit
 			const marker = L.marker(pointToLatLng(entity.position), {
 				icon: createEntityIcon(entity, false),
 				keyboard: true,
-				draggable: true,
+				draggable: editable,
 				bubblingMouseEvents: false,
 				title: entity.name
 			});
-			marker.on('add', () => decorateMarker(marker, entity, document.title, false));
+			marker.on('add', () => decorateMarker(marker, entity, document.title, false, editable));
 			marker.on('click', () => options.onSelect?.(entity.id));
-			marker.on('dragstart', () => options.onSelect?.(entity.id));
-			marker.on('dragend', () => {
-				const position = marker.getLatLng();
-				options.onEntityMove?.(entity.id, {
-					x: position.lng,
-					y: SHARED_MAP_DOCUMENT.height - position.lat
+			if (editable) {
+				marker.on('dragstart', () => options.onSelect?.(entity.id));
+				marker.on('dragend', () => {
+					const position = marker.getLatLng();
+					options.onEntityMove?.(entity.id, {
+						x: position.lng,
+						y: SHARED_MAP_DOCUMENT.height - position.lat
+					});
 				});
-			});
+			}
 			activeLayer.addLayer(marker);
 			activeMarkers.set(entity.id, marker);
 		}

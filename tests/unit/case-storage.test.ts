@@ -98,8 +98,9 @@ describe('case repository', () => {
 
 		const [migrated] = await listCaseDocuments();
 		expect(migrated).toMatchObject({
-			schemaVersion: 2,
+			schemaVersion: 3,
 			mapId: 'crime-city',
+			challenge: { objective: '', solutionEntityId: null, hint: '' },
 			entities: [{ position: { x: 1200, y: 800 } }]
 		});
 		expect(await loadCase('legacy-case')).toMatchObject({ mapId: 'crime-city' });

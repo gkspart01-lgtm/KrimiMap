@@ -1,6 +1,6 @@
 # KrimiMap — Implementation Plan
 
-**Status:** Living plan; the first shared-map editor slice is implemented in the open Phase 3 pull request. Remaining phases are still future work.
+**Status:** Phase 3 (shared-map editor core) is merged. Phase 4 (playtest vertical slice) is implemented and `npm run verify` passes on `feat/phase-4-playtest`; publishing and verifying its test preview are the remaining steps.
 **Authority:** `REQUIREMENTS.md` is the product baseline. If this plan conflicts with it, requirements win.
 **Repository language:** English for source comments, documentation, tests, and UI strings (the UI itself must also provide German).
 
@@ -141,19 +141,19 @@ Start with structured text generation (case drafts, characters, clue/event/timel
 
 ### Phase 3 — Editor vertical slices
 
-Implement one behavior at a time with test-first vertical slices: create/open/rename cases on the shared map; add/select/move case entities; show other-case entities as faded, non-interactive context; edit/save/reload; add named layers and timeline events; undo/redo and validation feedback.
+Implement one behavior at a time with test-first vertical slices: create/open cases on the shared map; add/select/move case entities; show other-case entities as faded, non-interactive context; edit/save/reload; undo/redo and validation feedback. Named layers and timeline events are explicitly deferred to a later authoring phase.
 
-The Svelte editor panels and Leaflet map must share the same domain state; neither may keep a separate unsaved copy.
+The Svelte editor panels and Leaflet map share the same domain state; neither keeps a separate unsaved copy.
 
-**Exit:** a creator can make a small case manually, edit it, undo/redo representative changes, save/reopen it, and receive actionable validation messages.
+**Exit:** a creator can make a small case manually, edit it, undo/redo representative changes, save/reopen it, and receive actionable validation messages. This core exit gate is implemented on `main`; named layers/timeline remain outstanding.
 
 ### Phase 4 — Playtest and offline case workflow
 
-- Implement clue inspection, objectives/deduction submission, optional hints, progress, and return-to-editor.
-- Add offline e2e coverage: create, save, close/reopen, export/import, and playtest with network disabled.
-- Test PWA update behavior so an app-shell update does not delete IndexedDB cases.
+- Add schema-v3 playtest data (objective, culprit character and optional hint) with a tested migration from v2.
+- Add the editor configuration/readiness check and a read-only playtest route for clue discovery, progress, hint reveal, deductions, and return to editing.
+- Add offline e2e coverage: create, save, close/reopen, export/import, and playtest with network disabled; verify a PWA update keeps IndexedDB cases.
 
-**Exit:** all editor and player acceptance criteria in `REQUIREMENTS.md` pass without a KrimiMap server.
+**Exit:** all editor and player acceptance criteria in `REQUIREMENTS.md` pass without a KrimiMap server. The implementation and local gates pass; the preview must still be published and checked on a browser/device before requesting user review.
 
 ### Phase 5 — AI generation
 

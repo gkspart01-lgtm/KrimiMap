@@ -13,7 +13,8 @@ until you know what failed first.
 - `scripts/build-sw.mjs` — runs after `vite build` and generates `build/sw.js`
   plus the Workbox runtime with `generateSW`. Precache: every emitted
   `html/js/css/svg/png/ico/woff2/webmanifest/json` up to 2 MiB
-  (currently 33 entries, ~1.5 MB).
+  (48 entries, ~401 KiB in the latest verified build; the optional WebLLM chunk
+  is reported and excluded).
 - `src/lib/pwa/register.ts` — registration, update detection, `SKIP_WAITING`
   hand-shake.
 - `src/lib/pwa/status.ts` — framework-free state machine for what the UI shows.
@@ -44,7 +45,7 @@ means every deep link gets the root shell, whose relative asset URLs then resolv
 below the route (`/editor/_app/…`) — the route never boots. Workbox's
 `directoryIndex: 'index.html'` maps a navigation to the precached
 `<route>/index.html` instead, which is exactly what a prerendered static app
-needs.
+needs. App routes use `?id=…` to select a local case, so `ignoreURLParametersMatching: [/^id$/]` removes only that parameter while matching the same prerendered route shell. Other query parameters remain significant; the Svelte router still receives the original URL and ID.
 
 ## Update flow
 
@@ -80,6 +81,8 @@ entry.
 4. Assert no console errors, no failed requests, and that no request leaves the
    app origin.
 5. Parse the manifest and fetch every declared icon.
+6. Create a local case, install a waiting service-worker update, accept it, and
+   confirm the saved case is still available from IndexedDB.
 
 `tests/unit/pwa-status.test.ts` covers the UI state machine: a pending update must
 survive an "offline ready" event, dismissal resets to idle, and "offline ready" is
@@ -92,5 +95,4 @@ only promised when a worker actually controls the page.
 - Pages sets no `Cross-Origin-Opener-Policy`/`Embedder-Policy`, so
   `crossOriginIsolated` stays `false` and multi-threaded WASM is unavailable.
   This is the one reason a small reverse proxy could be worth it later.
-- No background sync / offline write queue yet — that belongs to Phase 2/3, when
-  there is a case document to queue.
+- No background sync is used: case documents are local-only in IndexedDB and have no server queue to drain.

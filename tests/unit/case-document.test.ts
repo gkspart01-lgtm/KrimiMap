@@ -52,12 +52,30 @@ describe('slugify / uniqueId', () => {
 });
 
 describe('createEmptyCase', () => {
-	it('starts at the current schema version and references the shared map', () => {
+	it('starts with a blank challenge and a shared-map reference', () => {
 		const document = createEmptyCase({ title: '  Der Fall  ' });
 		expect(document.schemaVersion).toBe(CASE_SCHEMA_VERSION);
 		expect(document.title).toBe('Der Fall');
 		expect(document.mapId).toBe('crime-city');
+		expect(document.challenge).toEqual({ objective: '', solutionEntityId: null, hint: '' });
 		expect(validateCase(document).filter((issue) => issue.severity === 'error')).toEqual([]);
+	});
+
+	it('migrates version-2 cases to a blank challenge', () => {
+		const migrated = migrateCase({
+			schemaVersion: 2,
+			id: 'case-v2',
+			title: 'Altfall',
+			summary: 'Eine Spur',
+			language: 'de',
+			mapId: 'crime-city',
+			entities: [],
+			createdAt: '2026-01-01T00:00:00.000Z',
+			updatedAt: '2026-01-02T00:00:00.000Z'
+		});
+		expect(migrated.schemaVersion).toBe(CASE_SCHEMA_VERSION);
+		expect(migrated.challenge).toEqual({ objective: '', solutionEntityId: null, hint: '' });
+		expect(migrated.updatedAt).toBe('2026-01-02T00:00:00.000Z');
 	});
 
 	it('migrates old map coordinates proportionally onto the shared map', () => {
@@ -142,6 +160,36 @@ describe('validateCase', () => {
 		};
 		const paths = caseErrors(broken).map((issue) => issue.path);
 		expect(paths).toEqual(expect.arrayContaining(['entities[0].id', 'entities[0].kind']));
+	});
+
+	it('requires an existing character as the solution entity', () => {
+		const document = withEntity(createEmptyCase());
+		const valid = {
+			...document,
+			challenge: { objective: 'Identify the culprit', solutionEntityId: 'pfoertner', hint: '' }
+		};
+		expect(caseErrors(valid)).toEqual([]);
+
+		const unknown = {
+			...document,
+			challenge: { ...valid.challenge, solutionEntityId: 'missing' }
+		};
+		expect(caseErrors(unknown).map((issue) => issue.code)).toContain('challenge.solution.unknown');
+
+		const clue = {
+			...document.entities[0],
+			id: 'clue',
+			kind: 'clue' as const,
+			color: ENTITY_KIND_COLORS.clue
+		};
+		const notACharacter = {
+			...document,
+			entities: [clue],
+			challenge: { ...valid.challenge, solutionEntityId: 'clue' }
+		};
+		expect(caseErrors(notACharacter).map((issue) => issue.code)).toContain(
+			'challenge.solution.kind'
+		);
 	});
 });
 

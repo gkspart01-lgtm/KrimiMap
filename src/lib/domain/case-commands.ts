@@ -11,6 +11,7 @@ import {
 	ENTITY_KINDS,
 	type CaseDocument,
 	type CaseEntity,
+	type CaseChallenge,
 	type CasePoint,
 	type EntityKind,
 	slugify,
@@ -47,6 +48,14 @@ export function updateCaseMeta(
 		},
 		now
 	);
+}
+
+export function updateCaseChallenge(
+	document: CaseDocument,
+	patch: Partial<CaseChallenge>,
+	now: Date = new Date()
+): CaseDocument {
+	return touch({ ...document, challenge: { ...document.challenge, ...patch } }, now);
 }
 
 export interface NewEntityInput {
