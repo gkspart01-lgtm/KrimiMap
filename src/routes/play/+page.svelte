@@ -19,7 +19,7 @@
 	let selectedAnswerId = $state('');
 	let hintVisible = $state(false);
 	let solved = $state(false);
-	let feedbackKey = $state<'required' | 'findClue' | 'incorrect' | 'correct' | null>(null);
+	let feedbackKey = $state<'answer.required' | 'find.clue' | 'incorrect' | 'correct' | null>(null);
 
 	const clues = $derived((document?.entities ?? []).filter((entity) => entity.kind === 'clue'));
 	const characters = $derived(
@@ -53,11 +53,11 @@
 	function submitDeduction() {
 		if (!document || solved) return;
 		if (!selectedAnswerId) {
-			feedbackKey = 'required';
+			feedbackKey = 'answer.required';
 			return;
 		}
 		if (discoveredClueIds.length === 0) {
-			feedbackKey = 'findClue';
+			feedbackKey = 'find.clue';
 			return;
 		}
 		if (selectedAnswerId === document.challenge.solutionEntityId) {

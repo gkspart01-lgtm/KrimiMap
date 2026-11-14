@@ -98,6 +98,21 @@ describe('updateEntity / moveEntity', () => {
 			updateEntity(document, document.entities[0].id, { kind: 'monster' as never })
 		).toThrow(/Unbekannte Art/);
 	});
+
+	it('clears the solution when the chosen character changes to another kind', () => {
+		let document = addEntity(
+			base(),
+			{ kind: 'character', name: 'Mara', position: { x: 50, y: 50 } },
+			later
+		);
+		const culpritId = document.entities[0].id;
+		document = updateCaseChallenge(document, { solutionEntityId: culpritId }, later);
+
+		const changed = updateEntity(document, culpritId, { kind: 'clue' }, later);
+
+		expect(changed.entities[0].kind).toBe('clue');
+		expect(changed.challenge.solutionEntityId).toBeNull();
+	});
 });
 
 describe('references', () => {
@@ -153,6 +168,21 @@ describe('removeEntity', () => {
 		const removed = removeEntity(document, character.id, later);
 		expect(removed.entities.map((entity) => entity.id)).toEqual([clue.id]);
 		expect(removed.entities[0].relatedEntityIds).toEqual([]);
+	});
+
+	it('removes the solution reference when its chosen character is deleted', () => {
+		let document = addEntity(
+			base(),
+			{ kind: 'character', name: 'Mara', position: { x: 50, y: 50 } },
+			later
+		);
+		const culpritId = document.entities[0].id;
+		document = updateCaseChallenge(document, { solutionEntityId: culpritId }, later);
+
+		const removed = removeEntity(document, culpritId, later);
+
+		expect(removed.entities).toEqual([]);
+		expect(removed.challenge.solutionEntityId).toBeNull();
 	});
 
 	it('is a no-op for unknown ids', () => {

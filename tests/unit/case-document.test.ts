@@ -162,6 +162,12 @@ describe('validateCase', () => {
 		expect(paths).toEqual(expect.arrayContaining(['entities[0].id', 'entities[0].kind']));
 	});
 
+	it('treats array-shaped challenges as missing instead of reading fields from them', () => {
+		const document = createEmptyCase();
+		const broken = { ...document, challenge: [] as unknown as CaseDocument['challenge'] };
+		expect(caseErrors(broken).map((issue) => issue.code)).toEqual(['challenge.missing']);
+	});
+
 	it('requires an existing character as the solution entity', () => {
 		const document = withEntity(createEmptyCase());
 		const valid = {

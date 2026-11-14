@@ -35,7 +35,7 @@ const result = await generateSW({
 	directoryIndex: 'index.html',
 	// Case/player routes use `?id=...` for local document selection; cache the
 	// same static route shell regardless of the active case id on cold reload.
-	ignoreURLParametersMatching: [/^id$/],
+	ignoreURLParametersMatching: [/^id$/, /^utm_/, /^fbclid$/],
 	cleanupOutdatedCaches: true,
 	// Updates must wait for the user (see `register.ts`), but a first visit
 	// should control the page immediately so "offline ready" means something.

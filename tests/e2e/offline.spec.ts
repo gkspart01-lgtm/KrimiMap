@@ -43,6 +43,8 @@ test('the app reloads and opens the editor with the network disabled', async ({
 
 	await context.setOffline(true);
 
+	await page.goto('/?utm_source=playtest');
+	await expect(page.getByRole('heading', { level: 1 })).toContainText('KrimiMap');
 	await page.reload({ waitUntil: 'domcontentloaded' });
 	await expect(page.getByRole('heading', { level: 1 })).toContainText('KrimiMap');
 	await expect(page.getByTestId('connection-status')).toHaveAttribute('data-connection', 'offline');

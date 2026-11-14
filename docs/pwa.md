@@ -13,7 +13,7 @@ until you know what failed first.
 - `scripts/build-sw.mjs` — runs after `vite build` and generates `build/sw.js`
   plus the Workbox runtime with `generateSW`. Precache: every emitted
   `html/js/css/svg/png/ico/woff2/webmanifest/json` up to 2 MiB
-  (48 entries, ~401 KiB in the latest verified build; the optional WebLLM chunk
+  (48 entries, ~402 KiB in the latest verified build; the optional WebLLM chunk
   is reported and excluded).
 - `src/lib/pwa/register.ts` — registration, update detection, `SKIP_WAITING`
   hand-shake.
@@ -45,7 +45,7 @@ means every deep link gets the root shell, whose relative asset URLs then resolv
 below the route (`/editor/_app/…`) — the route never boots. Workbox's
 `directoryIndex: 'index.html'` maps a navigation to the precached
 `<route>/index.html` instead, which is exactly what a prerendered static app
-needs. App routes use `?id=…` to select a local case, so `ignoreURLParametersMatching: [/^id$/]` removes only that parameter while matching the same prerendered route shell. Other query parameters remain significant; the Svelte router still receives the original URL and ID.
+needs. App routes use `?id=…` to select a local case, so `ignoreURLParametersMatching: [/^id$/, /^utm_/, /^fbclid$/]` removes the case and standard analytics parameters while matching the same prerendered route shell. Other query parameters remain significant; the Svelte router still receives the original URL and ID.
 
 ## Update flow
 
@@ -74,10 +74,12 @@ entry.
 
 `tests/e2e/offline.spec.ts` (desktop project):
 
-1. Load the app, wait for the worker, then `context.setOffline(true)`.
-2. Reload — the shell comes from the cache, the header pill reads `Offline` with
+1. Load the app and wait for the service worker to control the page.
+2. `context.setOffline(true)`, navigate to `/?utm_source=playtest`, then reload —
+   the shell comes from cache and the header pill reads `Offline` with
    `data-offline-ready="true"`.
-3. Click through to `/editor`, load Leaflet and the local map image from cache; then navigate directly to `/editor/` (cold navigation, like an installed app).
+3. Click through to `/editor/?id=…`, load Leaflet and the local map image from cache;
+   then navigate directly to `/editor/` (cold navigation, like an installed app).
 4. Assert no console errors, no failed requests, and that no request leaves the
    app origin.
 5. Parse the manifest and fetch every declared icon.

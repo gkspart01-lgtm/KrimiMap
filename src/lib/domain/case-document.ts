@@ -215,7 +215,11 @@ export function validateCase(document: CaseDocument): CaseIssue[] {
 			id: String(document.mapId)
 		});
 	}
-	if (typeof document.challenge !== 'object' || document.challenge === null) {
+	if (
+		typeof document.challenge !== 'object' ||
+		document.challenge === null ||
+		Array.isArray(document.challenge)
+	) {
 		error('challenge', 'Spielziel fehlt', 'challenge.missing');
 	} else {
 		if (typeof document.challenge.objective !== 'string') {

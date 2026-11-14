@@ -45,7 +45,7 @@ All project documentation and repository content shall be maintained in English.
 - **FR-11 — Case flow (Must):** A playable case shall present its premise and objectives, allow evidence gathering, and provide a way to submit a deduction or answer.
 - **FR-12 — Hints and progress (Should):** The game should offer optional hints and communicate case progress or completion.
 - **FR-13 — Authored content variety (Should):** Case data shall allow different settings, characters, clues, events, and timelines without requiring a new application build for each case.
-- **FR-21 — Creator playtest (Must):** A creator shall be able to play a case using the same shared map and case data. Players can inspect map entities, track discovered clues, reveal an optional hint by choice, and submit a culprit character as their deduction; the game reports success or an incorrect guess without revealing the stored solution, and provides a route back to editing. The first playable rule requires at least one clue to be discovered before a deduction is accepted.
+- **FR-21 — Creator playtest (Must):** A creator shall be able to play a case using the same shared map and case data. Players can inspect map entities, track discovered clues, reveal an optional hint by choice, and submit a culprit character as their deduction; the player UI reports success or an incorrect guess and does not display the stored solution before submission, then provides a route back to editing. Because the case is local and editable, this UI behavior is not a security boundary against inspection or export. The first playable rule requires at least one clue to be discovered before a deduction is accepted.
 
 ### 4.3 AI assistance
 

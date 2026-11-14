@@ -75,7 +75,44 @@ test('creator can playtest a case, inspect clues, reveal a hint and submit a ded
 	);
 });
 
-test('the whole playtest workflow and local map work offline', async ({ page, context }) => {
+test('deleting the chosen culprit keeps autosave healthy and allows a replacement', async ({
+	page
+}) => {
+	await page.goto('/cases/');
+	await page.getByRole('button', { name: 'Neuer Fall' }).click();
+	await page.waitForURL((url) => url.pathname.endsWith('/editor/') && url.searchParams.has('id'));
+	await waitForMap(page);
+	await page.getByLabel('Spielziel').fill('Finde die gesuchte Figur.');
+	await page.getByRole('button', { name: '+ Hinweis' }).click();
+	await page.getByLabel('Name').fill('Spur am Fenster');
+	await page.getByRole('button', { name: '+ Figur' }).click();
+	await page.getByLabel('Name').fill('Mara');
+	await page.getByLabel('Gesuchte Figur').selectOption({ label: 'Mara' });
+	await expect(page.getByTestId('save-state')).toHaveAttribute('data-state', 'saved');
+	await expect(page.getByTestId('playtest-button')).toBeEnabled();
+
+	await page.getByLabel('Spielziel').fill('Aktuelle Formulierung des Ziels');
+	await expect(page.getByTestId('save-state')).toHaveAttribute('data-state', 'dirty');
+	await expect(page.getByTestId('playtest-button')).toBeDisabled();
+	await expect(page.getByTestId('save-state')).toHaveAttribute('data-state', 'saved');
+	await expect(page.getByTestId('playtest-button')).toBeEnabled();
+
+	await page.getByTestId('entity-form').getByRole('button', { name: 'Eintrag löschen' }).click();
+	await expect(page.getByTestId('save-state')).toHaveAttribute('data-state', 'saved');
+	await expect(page.getByLabel('Gesuchte Figur')).toHaveValue('');
+	await expect(page.getByTestId('playtest-button')).toBeDisabled();
+
+	await page.getByRole('button', { name: '+ Figur' }).click();
+	await page.getByLabel('Name').fill('Leo');
+	await page.getByLabel('Gesuchte Figur').selectOption({ label: 'Leo' });
+	await expect(page.getByTestId('save-state')).toHaveAttribute('data-state', 'saved');
+	await expect(page.getByTestId('playtest-button')).toBeEnabled();
+});
+
+test('the whole playtest workflow and local map work offline with network disabled', async ({
+	page,
+	context
+}) => {
 	const failedRequests: string[] = [];
 	page.on('requestfailed', (request) => failedRequests.push(request.url()));
 	await page.goto('/');

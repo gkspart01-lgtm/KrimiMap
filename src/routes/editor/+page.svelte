@@ -56,7 +56,7 @@
 	const characters = $derived(
 		(store.current?.entities ?? []).filter((entity) => entity.kind === 'character')
 	);
-	const canPlaytest = $derived.by(() => {
+	const challengeReady = $derived.by(() => {
 		const document = store.current;
 		if (!document?.challenge.objective.trim() || !document.challenge.solutionEntityId) return false;
 		return (
@@ -65,6 +65,14 @@
 			) && document.entities.some((entity) => entity.kind === 'clue')
 		);
 	});
+	const canPlaytest = $derived(challengeReady && store.saveState === 'saved');
+	const playtestStatusKey = $derived(
+		!challengeReady
+			? 'editor.challenge.incomplete'
+			: canPlaytest
+				? 'editor.challenge.ready'
+				: 'editor.challenge.wait-save'
+	);
 
 	// Undo/redo shortcuts. Text fields keep their own undo, so the handler steps
 	// aside for inputs — only the document history responds here.
@@ -339,9 +347,7 @@
 					data-testid="playtest-button"
 					onclick={startPlaytest}>{t('editor.challenge.playtest')}</button
 				>
-				<p class="muted small">
-					{t(canPlaytest ? 'editor.challenge.ready' : 'editor.challenge.incomplete')}
-				</p>
+				<p class="muted small">{t(playtestStatusKey)}</p>
 			</div>
 
 			<div class="add-row">

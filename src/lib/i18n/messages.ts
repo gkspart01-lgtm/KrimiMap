@@ -75,6 +75,7 @@ const de: Messages = {
 		'Spieltest bereit: Ziel, Lösungsfigur und mindestens ein Hinweis sind vorhanden.',
 	'editor.challenge.incomplete':
 		'Füge einen Hinweis hinzu, formuliere das Ziel und wähle eine Figur als Lösung.',
+	'editor.challenge.wait-save': 'Änderungen werden gespeichert, bevor der Spieltest startet.',
 	'play.title': 'KrimiMap — Spieltest',
 	'play.back': 'Zurück zum Editor',
 	'play.unavailable': 'Dieser Fall ist noch nicht für einen Spieltest eingerichtet.',
@@ -201,6 +202,7 @@ const en: Messages = {
 	'editor.challenge.ready': 'Ready: objective, solution character, and at least one clue are set.',
 	'editor.challenge.incomplete':
 		'Add a clue, write the objective, and choose a solution character.',
+	'editor.challenge.wait-save': 'Saving changes before starting the playtest.',
 	'play.title': 'KrimiMap — Playtest',
 	'play.back': 'Back to editor',
 	'play.unavailable': 'This case is not ready for a playtest yet.',
