@@ -228,7 +228,7 @@
 		<a href={resolve('cases/')}>{t('editor.fatal.back')}</a>
 	</div>
 {:else}
-	<div class="workspace">
+	<div class="workspace" class:panel-open={panelOpen}>
 		<div class="canvas" bind:this={host} data-testid="map"></div>
 
 		<div class="hud" data-testid="map-hud">
@@ -435,6 +435,7 @@
 
 	.canvas {
 		position: absolute;
+		z-index: 0;
 		inset: 0;
 		background: #eee5d3;
 		touch-action: none;
@@ -822,6 +823,11 @@
 			font: inherit;
 			font-size: 0.78rem;
 			cursor: pointer;
+		}
+
+		.workspace.panel-open .panel-toggle {
+			/* Keep the close control above the drawer rather than over its fields. */
+			bottom: calc(42vh + 5.75rem);
 		}
 
 		.hud {

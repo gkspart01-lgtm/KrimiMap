@@ -77,7 +77,7 @@ and the PWA tests would fail against a perfectly good build.
 - **mobile playtest** (`playtest.mobile.spec.ts`): ensure the bottom-sheet controls stay within the phone viewport, tap a read-only clue marker, and submit the correct deduction.
 - **PWA update** (`offline.spec.ts`): install a waiting service-worker update
   during an edited case, accept it, and verify the case remains in IndexedDB.
-- **mobile project** (Pixel 5, touch): map image fits the phone view, one-finger drag pans at initial fit and when zoomed, two-finger pinch zooms in and out around the midpoint, tap selects/deselects entities, and pinch does not move a marker. Multi-touch uses a reused CDP session per page.
+- **mobile project** (Pixel 5, touch): map image fits the phone view, one-finger drag pans at initial fit and when zoomed, two-finger pinch zooms in and out around the midpoint, tap selects/deselects entities, and pinch does not move a marker. The open properties drawer stays above Leaflet layers and its toggle does not cover fields. Multi-touch uses a reused CDP session per page.
 
 The map publishes its camera on the container element (`data-zoom`,
 `data-camera-x`, `data-camera-y`), which is what the tests read. That is a
