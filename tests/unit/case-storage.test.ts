@@ -5,6 +5,7 @@ import { addEntity } from '#lib/domain/case-commands';
 import {
 	deleteCase,
 	listCases,
+	listCaseDocuments,
 	loadCase,
 	resetStorage,
 	saveCase,
@@ -19,6 +20,25 @@ function sample(title = 'Der Fall') {
 		{ kind: 'clue', name: 'Schlüssel', position: { x: 100, y: 200 } },
 		now
 	);
+}
+
+async function putLegacyCase(document: unknown): Promise<void> {
+	const request = indexedDB.open('krimimap', 1);
+	const database = await new Promise<IDBDatabase>((resolve, reject) => {
+		request.onsuccess = () => resolve(request.result);
+		request.onerror = () => reject(request.error);
+		request.onupgradeneeded = () => {
+			const store = request.result.createObjectStore('cases', { keyPath: 'id' });
+			store.createIndex('updatedAt', 'updatedAt');
+		};
+	});
+	const transaction = database.transaction('cases', 'readwrite');
+	transaction.objectStore('cases').put(document);
+	await new Promise<void>((resolve, reject) => {
+		transaction.oncomplete = () => resolve();
+		transaction.onerror = () => reject(transaction.error);
+	});
+	database.close();
 }
 
 beforeAll(() => {
@@ -51,6 +71,38 @@ describe('case repository', () => {
 			}
 		]);
 		expect(await loadCase(document.id)).toEqual(stored);
+	});
+
+	it('migrates stored cases onto the shared map before returning them', async () => {
+		await putLegacyCase({
+			schemaVersion: 1,
+			id: 'legacy-case',
+			title: 'Altfall',
+			summary: '',
+			language: 'de',
+			map: { width: 6000, height: 400 },
+			entities: [
+				{
+					id: 'old-clue',
+					kind: 'clue',
+					name: 'Alte Spur',
+					description: '',
+					position: { x: 3000, y: 200 },
+					color: '#e8a33d',
+					relatedEntityIds: []
+				}
+			],
+			createdAt: now.toISOString(),
+			updatedAt: now.toISOString()
+		});
+
+		const [migrated] = await listCaseDocuments();
+		expect(migrated).toMatchObject({
+			schemaVersion: 2,
+			mapId: 'crime-city',
+			entities: [{ position: { x: 1200, y: 800 } }]
+		});
+		expect(await loadCase('legacy-case')).toMatchObject({ mapId: 'crime-city' });
 	});
 
 	it('returns null for an unknown id', async () => {

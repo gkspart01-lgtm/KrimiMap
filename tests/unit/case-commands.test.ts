@@ -166,14 +166,10 @@ describe('case metadata', () => {
 		expect(renameCase(base(), '   ', later).title).toBe('Unbenannter Fall');
 	});
 
-	it('updates summary, language and map size, keeping the rest', () => {
-		const document = updateCaseMeta(
-			base(),
-			{ summary: 'Kurz', language: 'en', map: { width: 3200 } },
-			later
-		);
+	it('updates summary and language without changing the shared map reference', () => {
+		const document = updateCaseMeta(base(), { summary: 'Kurz', language: 'en' }, later);
 		expect(document.summary).toBe('Kurz');
 		expect(document.language).toBe('en');
-		expect(document.map).toEqual({ width: 3200, height: 1600 });
+		expect(document.mapId).toBe('crime-city');
 	});
 });

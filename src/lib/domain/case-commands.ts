@@ -11,12 +11,12 @@ import {
 	ENTITY_KINDS,
 	type CaseDocument,
 	type CaseEntity,
-	type CaseMap,
 	type CasePoint,
 	type EntityKind,
 	slugify,
 	uniqueId
 } from './case-document';
+import { SHARED_MAP_DOCUMENT } from './map-document';
 
 function touch(document: CaseDocument, now: Date): CaseDocument {
 	return { ...document, updatedAt: now.toISOString() };
@@ -36,21 +36,14 @@ export function renameCase(
 
 export function updateCaseMeta(
 	document: CaseDocument,
-	patch: { summary?: string; language?: CaseDocument['language']; map?: Partial<CaseMap> },
+	patch: { summary?: string; language?: CaseDocument['language'] },
 	now: Date = new Date()
 ): CaseDocument {
-	const map = patch.map
-		? {
-				width: patch.map.width ?? document.map.width,
-				height: patch.map.height ?? document.map.height
-			}
-		: document.map;
 	return touch(
 		{
 			...document,
 			summary: patch.summary ?? document.summary,
-			language: patch.language ?? document.language,
-			map
+			language: patch.language ?? document.language
 		},
 		now
 	);
@@ -91,8 +84,8 @@ export function addEntity(
 		name: displayName,
 		description: input.description ?? '',
 		position: {
-			x: clampToMap(input.position.x, document.map.width),
-			y: clampToMap(input.position.y, document.map.height)
+			x: clampToMap(input.position.x, SHARED_MAP_DOCUMENT.width),
+			y: clampToMap(input.position.y, SHARED_MAP_DOCUMENT.height)
 		},
 		color: input.color ?? ENTITY_KIND_COLORS[kind],
 		relatedEntityIds: (input.relatedEntityIds ?? []).filter((id) => id !== undefined)
@@ -117,8 +110,8 @@ export function updateEntity(
 			kind: patch.kind ? entityKindOrThrow(patch.kind) : entity.kind,
 			position: patch.position
 				? {
-						x: clampToMap(patch.position.x, document.map.width),
-						y: clampToMap(patch.position.y, document.map.height)
+						x: clampToMap(patch.position.x, SHARED_MAP_DOCUMENT.width),
+						y: clampToMap(patch.position.y, SHARED_MAP_DOCUMENT.height)
 					}
 				: entity.position,
 			relatedEntityIds: patch.relatedEntityIds

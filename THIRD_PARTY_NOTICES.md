@@ -7,26 +7,27 @@ grows. Entries are added when a dependency is introduced, not at release time.
 
 ## Runtime dependencies
 
-| Package                                              | Version | Licence    | Why it is used                                                              |
-| ---------------------------------------------------- | ------- | ---------- | --------------------------------------------------------------------------- |
-| [phaser](https://phaser.io/)                         | 4.2.1   | MIT        | Map rendering, camera, pointer input on the canvas.                         |
-| [@mlc-ai/web-llm](https://github.com/mlc-ai/web-llm) | 0.2.86  | Apache-2.0 | Browser-local LLM inference over WebGPU, loaded only on the AI spike route. |
+| Package                                              | Version | Licence      | Why it is used                                                              |
+| ---------------------------------------------------- | ------- | ------------ | --------------------------------------------------------------------------- |
+| [leaflet](https://leafletjs.com/)                    | 1.9.4   | BSD-2-Clause | 2D shared-map rendering, image overlay, pan/zoom and marker interactions.   |
+| [@mlc-ai/web-llm](https://github.com/mlc-ai/web-llm) | 0.2.86  | Apache-2.0   | Browser-local LLM inference over WebGPU, loaded only on the AI spike route. |
 
 ## Build and test dependencies
 
-| Package                                                                                       | Version | Licence    |
-| --------------------------------------------------------------------------------------------- | ------- | ---------- |
-| [svelte](https://svelte.dev/)                                                                 | 5.57.2  | MIT        |
-| [@sveltejs/kit](https://svelte.dev/docs/kit)                                                  | 3.1.0   | MIT        |
-| [@sveltejs/adapter-static](https://github.com/sveltejs/kit/tree/main/packages/adapter-static) | 4.0.0   | MIT        |
-| [@sveltejs/vite-plugin-svelte](https://github.com/sveltejs/vite-plugin-svelte)                | 7.3.1   | MIT        |
-| [vite](https://vite.dev/)                                                                     | 8.3.5   | MIT        |
-| [vitest](https://vitest.dev/)                                                                 | 5.0.5   | MIT        |
-| [typescript](https://www.typescriptlang.org/)                                                 | 6.0.3   | Apache-2.0 |
-| [svelte-check](https://github.com/sveltejs/language-tools)                                    | 4.7.7   | MIT        |
-| [prettier](https://prettier.io/)                                                              | 3.9.10  | MIT        |
-| [prettier-plugin-svelte](https://github.com/sveltejs/prettier-plugin-svelte)                  | 4.1.1   | MIT        |
-| [@playwright/test](https://playwright.dev/)                                                   | 1.64.1  | Apache-2.0 |
+| Package                                                                                        | Version | Licence    |
+| ---------------------------------------------------------------------------------------------- | ------- | ---------- |
+| [svelte](https://svelte.dev/)                                                                  | 5.57.2  | MIT        |
+| [@sveltejs/kit](https://svelte.dev/docs/kit)                                                   | 3.1.0   | MIT        |
+| [@sveltejs/adapter-static](https://github.com/sveltejs/kit/tree/main/packages/adapter-static)  | 4.0.0   | MIT        |
+| [@sveltejs/vite-plugin-svelte](https://github.com/sveltejs/vite-plugin-svelte)                 | 7.3.1   | MIT        |
+| [vite](https://vite.dev/)                                                                      | 8.3.5   | MIT        |
+| [vitest](https://vitest.dev/)                                                                  | 5.0.5   | MIT        |
+| [typescript](https://www.typescriptlang.org/)                                                  | 6.0.3   | Apache-2.0 |
+| [svelte-check](https://github.com/sveltejs/language-tools)                                     | 4.7.7   | MIT        |
+| [prettier](https://prettier.io/)                                                               | 3.9.10  | MIT        |
+| [prettier-plugin-svelte](https://github.com/sveltejs/prettier-plugin-svelte)                   | 4.1.1   | MIT        |
+| [@playwright/test](https://playwright.dev/)                                                    | 1.64.1  | Apache-2.0 |
+| [@types/leaflet](https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/leaflet) | 1.9.22  | MIT        |
 
 ## Model weights
 
@@ -46,9 +47,10 @@ the outcome here.
 
 ## Bundled assets
 
-| Asset                | Source                   | Licence                      |
-| -------------------- | ------------------------ | ---------------------------- |
-| `static/favicon.svg` | Created for this project | MIT (same as the repository) |
+| Asset                        | Source                   | Licence                      |
+| ---------------------------- | ------------------------ | ---------------------------- |
+| `static/favicon.svg`         | Created for this project | MIT (same as the repository) |
+| `static/maps/crime-city.svg` | Original project artwork | MIT (same as the repository) |
 
 No third-party art, tilesets, fonts or audio are bundled yet. Any asset added
 later must be listed here with its origin and licence before it is committed.

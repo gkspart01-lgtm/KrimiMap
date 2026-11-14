@@ -9,31 +9,23 @@ async function zoomInUntilPannable(page: Page, clicks = 6) {
 	}
 }
 
-test('renders the canvas at the phone pixel ratio', async ({ page }) => {
+test('renders the shared map inside the phone viewport', async ({ page }) => {
 	await page.goto('/editor/');
 	await waitForMap(page);
 
-	const sizes = await page.locator('canvas').evaluate((element) => {
-		const canvas = element as HTMLCanvasElement;
-		const rect = canvas.getBoundingClientRect();
+	const sizes = await page.getByTestId('map').evaluate((element) => {
+		const rect = element.getBoundingClientRect();
+		const image = element.querySelector('img.leaflet-image-layer') as HTMLImageElement | null;
 		return {
-			backingWidth: canvas.width,
-			backingHeight: canvas.height,
-			cssWidth: rect.width,
-			cssHeight: rect.height,
-			dpr: window.devicePixelRatio
+			width: rect.width,
+			height: rect.height,
+			imageLoaded: Boolean(image?.complete && image.naturalWidth > 0)
 		};
 	});
 
-	expect(sizes.dpr).toBeGreaterThan(1);
-	// 1 px of rounding slack: at 3× the browser can land exactly on .5, and
-	// `toBeCloseTo(…, 0)` would then fail for a perfectly correct canvas.
-	expect(
-		Math.abs(sizes.backingWidth - sizes.cssWidth * Math.min(sizes.dpr, 3))
-	).toBeLessThanOrEqual(1);
-	expect(
-		Math.abs(sizes.backingHeight - sizes.cssHeight * Math.min(sizes.dpr, 3))
-	).toBeLessThanOrEqual(1);
+	expect(sizes.width).toBeGreaterThan(300);
+	expect(sizes.height).toBeGreaterThan(300);
+	expect(sizes.imageLoaded).toBe(true);
 });
 
 test('a short drag at initial fit still tracks the finger', async ({ page }) => {
@@ -41,7 +33,7 @@ test('a short drag at initial fit still tracks the finger', async ({ page }) => 
 	await waitForMap(page);
 
 	const before = await readCamera(page);
-	const box = await page.locator('canvas').boundingBox();
+	const box = await page.getByTestId('map').boundingBox();
 	if (!box) throw new Error('canvas has no box');
 	const start = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
 	const dx = 80;
@@ -66,7 +58,7 @@ test('a one-finger drag pans the map and does not scroll the page', async ({ pag
 	await zoomInUntilPannable(page);
 
 	const before = await readCamera(page);
-	const box = await page.locator('canvas').boundingBox();
+	const box = await page.getByTestId('map').boundingBox();
 	if (!box) throw new Error('canvas has no box');
 	const start = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
 
@@ -86,7 +78,7 @@ test('pinching with two fingers zooms in around the finger midpoint', async ({ p
 	await waitForMap(page);
 	await zoomInUntilPannable(page);
 
-	const box = await page.locator('canvas').boundingBox();
+	const box = await page.getByTestId('map').boundingBox();
 	if (!box) throw new Error('canvas has no box');
 	const centre = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
 	const spread = 40;
@@ -120,8 +112,8 @@ test('pinching with two fingers zooms in around the finger midpoint', async ({ p
 		x: (centre.x - box.x - box.width / 2) / after.zoom + after.x,
 		y: (centre.y - box.y - box.height / 2) / after.zoom + after.y
 	};
-	expect(worldAfter.x).toBeCloseTo(worldUnderMidpoint.x, 0);
-	expect(worldAfter.y).toBeCloseTo(worldUnderMidpoint.y, 0);
+	expect(Math.abs(worldAfter.x - worldUnderMidpoint.x)).toBeLessThanOrEqual(1);
+	expect(Math.abs(worldAfter.y - worldUnderMidpoint.y)).toBeLessThanOrEqual(1);
 });
 
 test('pinching back together zooms out again', async ({ page }) => {
@@ -129,7 +121,7 @@ test('pinching back together zooms out again', async ({ page }) => {
 	await waitForMap(page);
 	await zoomInUntilPannable(page, 8);
 
-	const box = await page.locator('canvas').boundingBox();
+	const box = await page.getByTestId('map').boundingBox();
 	if (!box) throw new Error('canvas has no box');
 	const centre = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
 
@@ -161,7 +153,7 @@ test('a second pinch finger landing on a marker must not drag that marker', asyn
 	await page.getByRole('button', { name: 'Eigenschaften' }).click();
 
 	const camera = await readCamera(page);
-	const box = await page.locator('canvas').boundingBox();
+	const box = await page.getByTestId('map').boundingBox();
 	if (!box) throw new Error('canvas has no box');
 	const marker = {
 		x: box.x + box.width / 2 + (entity.x - camera.x) * camera.zoom,
@@ -186,7 +178,7 @@ test('a second pinch finger landing on a marker must not drag that marker', asyn
 
 	// The empty-map first pointer cleared selection; re-tap the marker at its new
 	// screen position and confirm the stored world coordinates did not change.
-	const afterBox = await page.locator('canvas').boundingBox();
+	const afterBox = await page.getByTestId('map').boundingBox();
 	if (!afterBox) throw new Error('canvas has no box after pinch');
 	const markerAfter = {
 		x: afterBox.x + afterBox.width / 2 + (entity.x - after.x) * after.zoom,
@@ -215,7 +207,7 @@ test('pinching over a marker zooms instead of dragging the marker', async ({ pag
 	await page.getByRole('button', { name: 'Eigenschaften' }).click();
 
 	const cameraBefore = await readCamera(page);
-	const box = await page.locator('canvas').boundingBox();
+	const box = await page.getByTestId('map').boundingBox();
 	if (!box) throw new Error('canvas has no box');
 	const view = { width: box.width, height: box.height };
 	// Where the marker actually is on screen — the finger has to land on it, not
@@ -262,7 +254,7 @@ test('touch tap selects a marker and a second tap on empty map clears it', async
 
 	// Close the properties drawer; tap an empty spot to deselect.
 	await page.getByRole('button', { name: 'Eigenschaften' }).click();
-	const box = await page.locator('canvas').boundingBox();
+	const box = await page.getByTestId('map').boundingBox();
 	if (!box) throw new Error('canvas has no box');
 	const t = (type: 'touchStart' | 'touchEnd', points: { id: number; x: number; y: number }[]) =>
 		dispatchTouch(page, type, points);

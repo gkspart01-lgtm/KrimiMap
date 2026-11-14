@@ -1,6 +1,6 @@
 # KrimiMap — Implementation Plan
 
-**Status:** Agent hand-off plan; no application code has been implemented.
+**Status:** Living plan; the first shared-map editor slice is implemented in the open Phase 3 pull request. Remaining phases are still future work.
 **Authority:** `REQUIREMENTS.md` is the product baseline. If this plan conflicts with it, requirements win.
 **Repository language:** English for source comments, documentation, tests, and UI strings (the UI itself must also provide German).
 
@@ -19,7 +19,7 @@ Use this as the starting implementation choice, subject to a short package/licen
 
 - **Language:** TypeScript.
 - **UI and static build:** Svelte 5 + SvelteKit + `adapter-static` + Vite. SvelteKit documents static generation as outputting a collection of static files.[5]
-- **Map/game canvas:** Phaser 4, embedded in a Svelte component and initialized only in the browser. Phaser's official site identifies Phaser 4 as its open-source HTML5 game framework.[6]
+- **Map editor:** Leaflet 1.9 `CRS.Simple` with a same-origin illustrated map image for the current shared 2D world; the renderer remains an adapter, not the owner of case data.
 - **Persistence:** browser IndexedDB for case documents and local assets; JSON for portable case files.
 - **PWA:** a service worker caches versioned app-shell files and explicitly selected static assets. Prefer browser standards; add a PWA package only after confirming its license, maintenance, and SvelteKit compatibility.
 - **AI boundary:** a small provider interface returning validated structured drafts. Do not couple the editor or case schema to a specific model.
@@ -32,7 +32,7 @@ Before pinning dependencies, record each package's exact version, license, maint
 Static files / installed PWA
 └── Browser application
     ├── Svelte UI: editor panels, menus, player screens, localization
-    ├── Phaser canvas: map rendering, pan/zoom, hit testing, selection
+    ├── Leaflet map: shared map image, pan/zoom, active/inactive case layers
     ├── Domain layer: case schema, commands, validation, game rules
     ├── Local data layer: IndexedDB + import/export
     ├── Local AI worker (optional): downloaded model, runs on device
@@ -40,9 +40,9 @@ Static files / installed PWA
          └── No KrimiMap server or proxy
 ```
 
-Keep domain rules independent of Svelte and Phaser. Phaser scenes render and report user actions; they must not own the canonical case data. Svelte owns application navigation and editor/player UI. The domain layer owns case edits and validation. Persistence serializes domain documents, not live framework objects.
+Keep domain rules independent of Svelte and Leaflet. Leaflet renders the shared map and reports pointer/touch actions; it must not own canonical case data. Svelte owns application navigation and editor/player UI. The domain layer owns case edits and validation. Persistence serializes domain documents, not live framework objects.
 
-For SvelteKit, prerender the application as static output. Do not add server endpoints, server-only business modules, server actions, or runtime server rendering. Initialize Phaser and browser-only APIs in client lifecycle code so the static build does not access `window`, IndexedDB, or WebGL during build/prerender.
+For SvelteKit, prerender the application as static output. Do not add server endpoints, server-only business modules, server actions, or runtime server rendering. Initialize Leaflet and browser-only APIs in client lifecycle code so the static build does not access `window`, IndexedDB, or WebGL during build/prerender.
 
 ## 4. Proposed source layout
 
@@ -50,7 +50,7 @@ For SvelteKit, prerender the application as static output. Do not add server end
 src/
   lib/
     domain/       case schema, IDs, commands, validation, game rules
-    game/         Phaser bootstrapping, scenes, map camera, entity rendering
+    game/         Leaflet map adapter and case-layer rendering
     editor/       editor state, panels, forms, selection and tools
     player/       case play mode, clue inspection, deduction flow
     storage/      IndexedDB repository, migrations, JSON import/export
@@ -72,18 +72,18 @@ Adjust names to the generated SvelteKit conventions, but preserve the boundaries
 
 ## 5. Case data and editing model
 
-Define a versioned `CaseDocument` before building editor screens. Initial fields should cover:
+Define a versioned `CaseDocument` and reusable `MapDocument` before building editor screens. Initial fields should cover:
 
 - `schemaVersion`, stable case ID, title, language, description, and setting;
-- map dimensions, tile/map references, and named layers;
-- entities (characters, objects, clues) with stable IDs, positions, editable properties, and asset references;
+- a stable `mapId` reference to shared map metadata/artwork; do not embed a private copy of map dimensions in each case;
+- case-owned entities (characters, objects, clues) with stable IDs, positions, editable properties, and asset references;
 - time points/events and character movement or presence;
 - objectives/questions, clue relationships, hints, and the solution/deduction rules;
 - asset metadata needed to identify origin and license.
 
 Use a migration boundary keyed by `schemaVersion`. JSON import must validate size, shape, IDs, references, and asset paths before persistence; never execute imported content as code. Exported cases must not include API keys, model caches, or browser secrets.
 
-All case changes should pass through domain commands. Implement undo/redo as a command history with bounded memory; test command behavior independently from Phaser rendering. Persist using a repository abstraction over IndexedDB. Store user-created cases separately from cached application/model assets so clearing a model cache cannot delete levels.
+All case changes should pass through domain commands. Implement undo/redo as a command history with bounded memory; test command behavior independently from Leaflet rendering. Persist using a repository abstraction over IndexedDB. Store user-created cases separately from cached application/model assets so clearing a model cache cannot delete levels.
 
 ## 6. AI plan: local first, explicit cloud fallback
 
@@ -117,7 +117,7 @@ Start with structured text generation (case drafts, characters, clue/event/timel
 ### Phase 0 — Bootstrap and technical decisions
 
 - Add the MIT `LICENSE` and a third-party license/asset inventory policy.
-- Create the static SvelteKit/TypeScript/Phaser build, lockfile, formatting/type-check/test commands, and minimal CI checks.
+- Create the static SvelteKit/TypeScript/Leaflet build, lockfile, formatting/type-check/test commands, and minimal CI checks.
 - Prove a production build emits static assets and runs from a static preview without any application API/server.
 - Run the local-AI feasibility spike and document device results before choosing a model. Review candidate package and model licenses.
 
@@ -126,7 +126,7 @@ Start with structured text generation (case drafts, characters, clue/event/timel
 ### Phase 1 — Offline app shell and map workspace
 
 - Add PWA manifest, icons, and versioned app-shell caching.
-- Build an empty editor shell with a Phaser canvas, responsive layout, pan/zoom, and an explicit offline/online indicator.
+- Build a shared-map editor shell with Leaflet, responsive layout, pan/zoom, and an explicit offline/online indicator.
 - Add an e2e test that loads the built app once, switches the browser offline, reloads, and opens the editor.
 
 **Exit:** installed/cached editor shell opens offline on supported test browsers; no KrimiMap API requests exist.
@@ -141,15 +141,9 @@ Start with structured text generation (case drafts, characters, clue/event/timel
 
 ### Phase 3 — Editor vertical slices
 
-Implement one behavior at a time with test-first vertical slices:
+Implement one behavior at a time with test-first vertical slices: create/open/rename cases on the shared map; add/select/move case entities; show other-case entities as faded, non-interactive context; edit/save/reload; add named layers and timeline events; undo/redo and validation feedback.
 
-1. Create/open/rename a blank case.
-2. Add/select/move/delete a basic character/object/clue entity.
-3. Edit properties and save/reload the result.
-4. Add layers and timeline events.
-5. Add undo/redo and validation feedback.
-
-The Svelte editor panels and Phaser canvas must share the same domain state; neither may keep a separate unsaved copy.
+The Svelte editor panels and Leaflet map must share the same domain state; neither may keep a separate unsaved copy.
 
 **Exit:** a creator can make a small case manually, edit it, undo/redo representative changes, save/reopen it, and receive actionable validation messages.
 
@@ -204,4 +198,5 @@ For offline browser tests, verify both behavior and network traffic: after the a
 [3] https://webllm.mlc.ai/docs — WebLLM official docs: browser-local LLM inference using WebGPU
 [4] https://huggingface.co/docs/transformers.js/en/index — Transformers.js official docs: browser inference and WebGPU caveats
 [5] https://svelte.dev/docs/kit/adapter-static — SvelteKit: static site adapter
-[6] https://phaser.io/phaser4 — Phaser official: Phaser 4 web game framework
+[6] https://leafletjs.com/reference.html — Leaflet official API reference
+[7] https://leafletjs.com/examples/crs-simple/crs-simple.html — Leaflet `CRS.Simple` game-map example

@@ -13,6 +13,14 @@ import { collectProblems, waitForMap } from './helpers';
 
 const ORIGIN = 'http://127.0.0.1:4173';
 
+async function expectSharedMapArtLoaded(page: Page): Promise<void> {
+	const image = page.getByTestId('map').locator('img.leaflet-image-layer');
+	await expect(image).toBeVisible();
+	await expect
+		.poll(() => image.evaluate((element) => (element as HTMLImageElement).naturalWidth))
+		.toBeGreaterThan(0);
+}
+
 async function primeShell(page: Page): Promise<void> {
 	await page.goto('/');
 
@@ -38,16 +46,18 @@ test('the app reloads and opens the editor with the network disabled', async ({
 	await expect(page.getByTestId('connection-status')).toHaveAttribute('data-connection', 'offline');
 	await expect(page.getByTestId('connection-status')).toHaveAttribute('data-offline-ready', 'true');
 
-	// Client-side navigation into the heaviest route: Phaser must load from cache.
+	// Client-side navigation loads Leaflet and the map image from the offline cache.
 	await page.getByRole('link', { name: 'Editor' }).click();
 	await expect(page).toHaveURL(/\/editor\/\?id=/);
 	const camera = await waitForMap(page);
+	await expectSharedMapArtLoaded(page);
 	expect(camera.zoom).toBeGreaterThan(0);
 
 	// A direct visit — a fresh navigation, not client-side routing — works offline
 	// too, which is what a bookmarked or installed editor does on a cold start.
 	await page.goto('/editor/');
 	await waitForMap(page);
+	await expectSharedMapArtLoaded(page);
 
 	expect(problems, problems.join('\n')).toEqual([]);
 });

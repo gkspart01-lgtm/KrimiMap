@@ -76,8 +76,7 @@ entry.
 1. Load the app, wait for the worker, then `context.setOffline(true)`.
 2. Reload — the shell comes from the cache, the header pill reads `Offline` with
    `data-offline-ready="true"`.
-3. Click through to `/editor` and boot Phaser from the cache; then navigate
-   directly to `/editor/` (cold navigation, like an installed app).
+3. Click through to `/editor`, load Leaflet and the local map image from cache; then navigate directly to `/editor/` (cold navigation, like an installed app).
 4. Assert no console errors, no failed requests, and that no request leaves the
    app origin.
 5. Parse the manifest and fetch every declared icon.

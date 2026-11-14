@@ -38,7 +38,7 @@ test('mouse click selects a marker, clicking empty map clears selection', async 
 	);
 
 	// Click empty canvas space to clear the selection before selecting the marker.
-	const canvas = page.locator('canvas');
+	const canvas = page.getByTestId('map');
 	const box = await canvas.boundingBox();
 	if (!box) throw new Error('canvas has no box');
 	await page.mouse.click(box.x + 40, box.y + 80);
@@ -51,4 +51,29 @@ test('mouse click selects a marker, clicking empty map clears selection', async 
 	await expect(page.getByTestId('entity-form').getByRole('textbox').first()).toHaveValue(
 		'Messerspur'
 	);
+});
+
+test('dragging an active marker updates its shared-map coordinates', async ({ page }) => {
+	await createCaseOnMap(page);
+	await page.getByRole('button', { name: '+ Hinweis' }).click();
+	await expect(page.getByTestId('entity-form')).toBeVisible();
+
+	const coords = page.getByTestId('entity-form').locator('.coords');
+	const beforeText = (await coords.textContent()) ?? '';
+	const before = markerWorldPoint(beforeText);
+	const marker = page.locator('[data-case-layer="active"]').first();
+	const box = await marker.boundingBox();
+	if (!box) throw new Error('active marker has no rendered position');
+
+	await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+	await page.mouse.down();
+	await page.mouse.move(box.x + box.width / 2 + 60, box.y + box.height / 2 + 35, { steps: 5 });
+	await page.mouse.up();
+
+	await expect
+		.poll(async () => markerWorldPoint((await coords.textContent()) ?? ''))
+		.not.toEqual(before);
+	const after = markerWorldPoint((await coords.textContent()) ?? '');
+	expect(after.x).toBeGreaterThan(before.x);
+	expect(after.y).toBeGreaterThan(before.y);
 });

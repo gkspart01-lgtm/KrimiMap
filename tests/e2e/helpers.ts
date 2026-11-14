@@ -20,9 +20,10 @@ export async function readCamera(page: Page): Promise<CameraReading> {
 	return { x, y, zoom };
 }
 
-/** Wait until the Phaser canvas has booted and published a camera. */
+/** Wait until the Leaflet map has booted and published a camera. */
 export async function waitForMap(page: Page): Promise<CameraReading> {
-	await expect(page.locator('canvas')).toBeVisible();
+	await expect(page.getByTestId('map')).toBeVisible();
+	await expect(page.getByTestId('map')).toHaveClass(/leaflet-container/);
 	await expect(page.getByTestId('map')).toHaveAttribute('data-zoom', /\d/, { timeout: 20_000 });
 	return readCamera(page);
 }

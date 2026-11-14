@@ -65,7 +65,10 @@ const de: Messages = {
 	'cases.storage': 'Belegt: {used} von {quota}',
 
 	'editor.title': 'KrimiMap — Editor',
-	'editor.hud.hint': 'Ziehen = Karte verschieben · Marker ziehen = platzieren',
+	'map.shared.title': 'Krimi-Stadt · gemeinsame Karte',
+	'editor.hud.current-case': 'Aktiver Fall: {title}',
+	'editor.hud.other-cases': '{count} ausgegraute Objekte aus anderen Fällen',
+	'editor.hud.hint': 'Karte ziehen = verschieben · Marker ziehen = versetzen',
 	'editor.hud.debug': 'Zoom {percent}% · Mitte {x}/{y} · {width}×{height}',
 	'editor.title.label': 'Titel des Falls',
 	'editor.back': 'Fälle',
@@ -160,7 +163,10 @@ const en: Messages = {
 	'cases.storage': 'Used: {used} of {quota}',
 
 	'editor.title': 'KrimiMap — Editor',
-	'editor.hud.hint': 'Drag = move the map · drag a marker = place it',
+	'map.shared.title': 'Crime City · shared map',
+	'editor.hud.current-case': 'Active case: {title}',
+	'editor.hud.other-cases': '{count} faded objects from other cases',
+	'editor.hud.hint': 'Drag map to pan · drag a marker to move it',
 	'editor.hud.debug': 'Zoom {percent}% · centre {x}/{y} · {width}×{height}',
 	'editor.title.label': 'Case title',
 	'editor.back': 'Cases',

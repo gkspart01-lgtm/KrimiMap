@@ -39,8 +39,7 @@ export default defineConfig({
 			 * registration) cannot run in Node and are covered by Playwright instead.
 			 */
 			include: [
-				'src/lib/game/camera.ts',
-				'src/lib/game/map-controller.ts',
+				'src/lib/domain/map-document.ts',
 				'src/lib/ai/contracts/case-draft.ts',
 				'src/lib/pwa/status.ts'
 			],

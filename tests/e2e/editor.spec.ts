@@ -6,26 +6,24 @@ async function zoomInUntilPannable(page: Page, clicks = 4) {
 	await clickRepeatedly(page, 'Hineinzoomen', clicks);
 }
 
-test('canvas fills its container at device resolution', async ({ page }) => {
+test('renders the shared map to the edge of its container', async ({ page }) => {
 	const problems = collectProblems(page);
 	await page.goto('/editor/');
 	await waitForMap(page);
 
-	const sizes = await page.locator('canvas').evaluate((element) => {
-		const canvas = element as HTMLCanvasElement;
-		const rect = canvas.getBoundingClientRect();
+	const sizes = await page.getByTestId('map').evaluate((element) => {
+		const rect = element.getBoundingClientRect();
+		const image = element.querySelector('img.leaflet-image-layer') as HTMLImageElement | null;
 		return {
-			backingWidth: canvas.width,
-			backingHeight: canvas.height,
-			cssWidth: rect.width,
-			cssHeight: rect.height,
-			dpr: window.devicePixelRatio
+			width: rect.width,
+			height: rect.height,
+			imageLoaded: Boolean(image?.complete && image.naturalWidth > 0)
 		};
 	});
 
-	expect(sizes.cssWidth).toBeGreaterThan(300);
-	expect(sizes.backingWidth).toBeCloseTo(sizes.cssWidth * Math.min(sizes.dpr, 3), 0);
-	expect(sizes.backingHeight).toBeCloseTo(sizes.cssHeight * Math.min(sizes.dpr, 3), 0);
+	expect(sizes.width).toBeGreaterThan(300);
+	expect(sizes.height).toBeGreaterThan(300);
+	expect(sizes.imageLoaded).toBe(true);
 	expect(problems).toEqual([]);
 });
 
@@ -35,7 +33,7 @@ test('dragging the map follows the pointer exactly', async ({ page }) => {
 	await zoomInUntilPannable(page);
 
 	const before = await readCamera(page);
-	const box = await page.locator('canvas').boundingBox();
+	const box = await page.getByTestId('map').boundingBox();
 	if (!box) throw new Error('canvas has no box');
 
 	const start = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
@@ -88,7 +86,7 @@ test('the wheel zooms around the pointer', async ({ page }) => {
 	await waitForMap(page);
 	await zoomInUntilPannable(page);
 
-	const box = await page.locator('canvas').boundingBox();
+	const box = await page.getByTestId('map').boundingBox();
 	if (!box) throw new Error('canvas has no box');
 	const anchor = { x: box.x + box.width * 0.25, y: box.y + box.height * 0.25 };
 

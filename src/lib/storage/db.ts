@@ -11,7 +11,7 @@
  * - User cases live in their own store: clearing a model cache (Phase 5) must
  *   never be able to delete a case.
  */
-import { assertValidCase, type CaseDocument } from '#lib/domain/case-document';
+import { assertValidCase, migrateCase, type CaseDocument } from '#lib/domain/case-document';
 
 const DB_NAME = 'krimimap';
 const DB_VERSION = 1;
@@ -102,28 +102,74 @@ function toSummary(document: CaseDocument): CaseSummary {
 	};
 }
 
-export async function listCases(): Promise<CaseSummary[]> {
+async function persistDocuments(documents: CaseDocument[]): Promise<void> {
+	if (documents.length === 0) return;
+	const db = await openDatabase();
+	const transaction = db.transaction(CASES_STORE, 'readwrite');
+	const store = transaction.objectStore(CASES_STORE);
+	for (const document of documents) {
+		store.put(JSON.parse(JSON.stringify(document)) as CaseDocument);
+	}
+	await new Promise<void>((resolve, reject) => {
+		transaction.oncomplete = () => resolve();
+		transaction.onerror = () =>
+			reject(new StorageError('Migration konnte nicht gespeichert werden', transaction.error));
+		transaction.onabort = () =>
+			reject(new StorageError('Migration wurde abgebrochen', transaction.error));
+	});
+}
+
+function migrateStoredDocuments(rawDocuments: CaseDocument[]): {
+	documents: CaseDocument[];
+	upgraded: CaseDocument[];
+} {
+	const documents = rawDocuments.map((raw) => {
+		const migrated = migrateCase(raw);
+		assertValidCase(migrated);
+		return migrated;
+	});
+	return {
+		documents,
+		upgraded: documents.filter((document, index) => {
+			return rawDocuments[index].schemaVersion !== document.schemaVersion;
+		})
+	};
+}
+
+export async function listCaseDocuments(): Promise<CaseDocument[]> {
 	try {
 		const db = await openDatabase();
 		const transaction = db.transaction(CASES_STORE, 'readonly');
-		const all = await promisify(
+		const rawDocuments = await promisify(
 			transaction.objectStore(CASES_STORE).getAll() as IDBRequest<CaseDocument[]>
 		);
-		return all.map(toSummary).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+		const { documents, upgraded } = migrateStoredDocuments(rawDocuments);
+		await persistDocuments(upgraded);
+		return documents;
 	} catch (cause) {
 		if (cause instanceof StorageError) throw cause;
 		throw new StorageError('Fälle konnten nicht geladen werden', cause);
 	}
 }
 
+export async function listCases(): Promise<CaseSummary[]> {
+	return (await listCaseDocuments())
+		.map(toSummary)
+		.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+
 export async function loadCase(id: string): Promise<CaseDocument | null> {
 	try {
 		const db = await openDatabase();
 		const transaction = db.transaction(CASES_STORE, 'readonly');
-		const document = await promisify(
+		const raw = await promisify(
 			transaction.objectStore(CASES_STORE).get(id) as IDBRequest<CaseDocument | undefined>
 		);
-		return document ?? null;
+		if (!raw) return null;
+		const document = migrateCase(raw);
+		assertValidCase(document);
+		if (raw.schemaVersion !== document.schemaVersion) await persistDocuments([document]);
+		return document;
 	} catch (cause) {
 		if (cause instanceof StorageError) throw cause;
 		throw new StorageError('Fall konnte nicht geladen werden', cause);
