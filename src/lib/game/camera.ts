@@ -87,13 +87,14 @@ export function zoomAround(
 }
 
 /**
- * Keep the visible area inside the map. When the map is smaller than the
- * viewport on an axis the map is centred on that axis instead of being pinned
- * to a corner, which avoids dead space the player cannot reach.
+ * Clamp the camera to the map with a little pan slack.
  *
- * `allowance` (a fraction of the viewport, 0..0.9) lets the camera move past
- * the map edge. Without it, a map that exactly fits the screen cannot be
- * dragged at all, which feels broken even though it is technically correct.
+ * For an axis where the map is smaller than the visible world, the old code
+ * returned `map / 2` unconditionally. That hard-locks the camera at fit zoom:
+ * touch drags appear to move slowly (actually they are discarded). Instead let
+ * the whole small map travel through its empty viewport margin, plus `slack`.
+ * For a larger map keep the viewport covered, with the same extra slack at the
+ * edge. `allowance` is a screen-space fraction of the viewport (0..0.9).
  */
 export function clampToMap(
 	camera: CameraState,
@@ -110,14 +111,14 @@ export function clampToMap(
 	const slackX = (viewport.width * slack) / zoom;
 	const slackY = (viewport.height * slack) / zoom;
 
-	const x =
-		map.width <= halfWidth * 2
-			? map.width / 2
-			: Math.min(map.width - halfWidth + slackX, Math.max(halfWidth - slackX, camera.x));
-	const y =
-		map.height <= halfHeight * 2
-			? map.height / 2
-			: Math.min(map.height - halfHeight + slackY, Math.max(halfHeight - slackY, camera.y));
+	const clampAxis = (centre: number, mapSize: number, halfViewport: number, slackWorld: number) => {
+		const small = mapSize <= halfViewport * 2;
+		const min = small ? mapSize - halfViewport - slackWorld : halfViewport - slackWorld;
+		const max = small ? halfViewport + slackWorld : mapSize - halfViewport + slackWorld;
+		return Math.min(max, Math.max(min, centre));
+	};
+	const x = clampAxis(camera.x, map.width, halfWidth, slackX);
+	const y = clampAxis(camera.y, map.height, halfHeight, slackY);
 
 	return { x, y, zoom };
 }

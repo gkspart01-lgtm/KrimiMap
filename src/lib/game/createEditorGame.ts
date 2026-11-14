@@ -13,7 +13,7 @@ const MAX_PIXEL_RATIO = 3;
  * map edge. Without slack a map that fits the screen cannot be moved at all and
  * dragging feels unresponsive.
  */
-const PAN_ALLOWANCE = 0.15;
+const PAN_ALLOWANCE = 0.35;
 
 /** Hit radius for selecting/dragging an entity, in world pixels. */
 const HIT_RADIUS = 40;
@@ -511,7 +511,7 @@ export function createEditorGame(parent: HTMLElement, options: Options = {}): Ed
 
 				// A second finger means pinch: hand both pointers to the controller and
 				// drop any pending marker gesture, so the map zooms and the marker stays.
-				if (this.candidate || this.dragging) {
+				if (this.candidate || this.dragging || active.activePointers > 0) {
 					const pending = this.candidate;
 					if (this.dragging) {
 						this.entityObjects

@@ -74,10 +74,31 @@ describe('clampToMap', () => {
 		expect(clamped.y).toBe(300);
 	});
 
-	it('centres an axis where the map is smaller than the viewport', () => {
+	it('allows a small map to move inside the empty viewport margin', () => {
 		const small = { width: 200, height: 3000 };
-		const clamped = clampToMap({ x: 999, y: 1500, zoom: 1 }, small, viewport);
-		expect(clamped.x).toBe(100);
+		const withinMargin = clampToMap({ x: 250, y: 1500, zoom: 1 }, small, viewport);
+		const beyondMargin = clampToMap({ x: 999, y: 1500, zoom: 1 }, small, viewport);
+		expect(withinMargin.x).toBe(250);
+		// With no extra allowance, the map's right edge may reach the viewport edge.
+		expect(beyondMargin.x).toBe(400);
+	});
+
+	it('allows a small map to follow a short drag within its margin and slack', () => {
+		const small = { width: 240, height: 180 };
+		const fitted = { x: 120, y: 90, zoom: 0.5 };
+		const dragged = panBy(fitted, { x: 100, y: -100 });
+		const clamped = clampToMap(
+			dragged,
+			small,
+			{ width: 800, height: 600 },
+			DEFAULT_ZOOM_LIMITS,
+			0.35
+		);
+
+		// This is still inside the viewport's 35% pan allowance, so a 100 CSS px
+		// finger drag must not be silently converted back to the centred camera.
+		expect(clamped.x).toBeCloseTo(-80, 8);
+		expect(clamped.y).toBeCloseTo(290, 8);
 	});
 
 	it('applies the zoom limits while clamping', () => {

@@ -54,7 +54,8 @@ Implemented:
 - **A working editor**: case list at `/cases` (create, open, import, export,
   delete), and `/editor?id=…` with the case's own map size, its markers, click to
   select, drag to place, edit name/kind/description, delete, validate — all
-  autosaved with a visible save state.
+  autosaved with a visible save state. Cases currently share the same procedural
+  map backdrop; per-case map artwork/tiles are not implemented yet.
 
 Not implemented yet (next phases): layers and timeline events, undo/redo (the
 domain commands are pure, so it is a history on top), playtest mode, and AI

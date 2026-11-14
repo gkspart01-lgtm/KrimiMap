@@ -36,6 +36,30 @@ test('renders the canvas at the phone pixel ratio', async ({ page }) => {
 	).toBeLessThanOrEqual(1);
 });
 
+test('a short drag at initial fit still tracks the finger', async ({ page }) => {
+	await page.goto('/editor/');
+	await waitForMap(page);
+
+	const before = await readCamera(page);
+	const box = await page.locator('canvas').boundingBox();
+	if (!box) throw new Error('canvas has no box');
+	const start = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+	const dx = 80;
+	const dy = -80;
+
+	await dispatchTouch(page, 'touchStart', [{ id: 1, x: start.x, y: start.y }]);
+	for (let step = 1; step <= 4; step += 1) {
+		await dispatchTouch(page, 'touchMove', [
+			{ id: 1, x: start.x + (dx * step) / 4, y: start.y + (dy * step) / 4 }
+		]);
+	}
+	await dispatchTouch(page, 'touchEnd', []);
+
+	const after = await readCamera(page);
+	expect((before.x - after.x) * before.zoom).toBeCloseTo(dx, 0);
+	expect((before.y - after.y) * before.zoom).toBeCloseTo(dy, 0);
+});
+
 test('a one-finger drag pans the map and does not scroll the page', async ({ page }) => {
 	await page.goto('/editor/');
 	await waitForMap(page);
@@ -122,6 +146,56 @@ test('pinching back together zooms out again', async ({ page }) => {
 
 	const after = await readCamera(page);
 	expect(after.zoom).toBeLessThan(before.zoom);
+});
+
+test('a second pinch finger landing on a marker must not drag that marker', async ({ page }) => {
+	await page.goto('/editor/');
+	await waitForMap(page);
+	await page.getByRole('button', { name: '+ Hinweis' }).click();
+	await expect(page.getByTestId('entity-form')).toBeVisible();
+	const coords = page.getByTestId('entity-form').locator('.coords');
+	const beforeCoords = ((await coords.textContent()) ?? '').trim();
+	const match = /x (\d+) · y (\d+)/.exec(beforeCoords);
+	if (!match) throw new Error(`unexpected coords: ${beforeCoords}`);
+	const entity = { x: Number(match[1]), y: Number(match[2]) };
+	await page.getByRole('button', { name: 'Eigenschaften' }).click();
+
+	const camera = await readCamera(page);
+	const box = await page.locator('canvas').boundingBox();
+	if (!box) throw new Error('canvas has no box');
+	const marker = {
+		x: box.x + box.width / 2 + (entity.x - camera.x) * camera.zoom,
+		y: box.y + box.height / 2 + (entity.y - camera.y) * camera.zoom
+	};
+	const emptyFinger = { x: marker.x + 100, y: marker.y };
+
+	// Pointer 1 starts on empty map. Pointer 2 starts on the marker.
+	await dispatchTouch(page, 'touchStart', [{ id: 1, ...emptyFinger }]);
+	await dispatchTouch(page, 'touchStart', [
+		{ id: 1, ...emptyFinger },
+		{ id: 2, x: marker.x, y: marker.y }
+	]);
+	await dispatchTouch(page, 'touchMove', [
+		{ id: 1, x: emptyFinger.x + 40, y: emptyFinger.y },
+		{ id: 2, x: marker.x - 40, y: marker.y }
+	]);
+	await dispatchTouch(page, 'touchEnd', []);
+
+	const after = await readCamera(page);
+	expect(after.zoom).toBeGreaterThan(camera.zoom);
+
+	// The empty-map first pointer cleared selection; re-tap the marker at its new
+	// screen position and confirm the stored world coordinates did not change.
+	const afterBox = await page.locator('canvas').boundingBox();
+	if (!afterBox) throw new Error('canvas has no box after pinch');
+	const markerAfter = {
+		x: afterBox.x + afterBox.width / 2 + (entity.x - after.x) * after.zoom,
+		y: afterBox.y + afterBox.height / 2 + (entity.y - after.y) * after.zoom
+	};
+	await dispatchTouch(page, 'touchStart', [{ id: 3, ...markerAfter }]);
+	await dispatchTouch(page, 'touchEnd', []);
+	await expect(page.getByTestId('entity-form')).toBeVisible();
+	await expect(coords).toHaveText(beforeCoords);
 });
 
 test('pinching over a marker zooms instead of dragging the marker', async ({ page }) => {

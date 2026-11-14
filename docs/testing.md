@@ -80,8 +80,10 @@ and the PWA tests would fail against a perfectly good build.
   broken import with a readable message, delete a case, and switch the UI to
   English and back (persisted across a reload).
 - **mobile project** (Pixel 5, touch): canvas renders at the phone pixel ratio,
-  one-finger drag pans without scrolling the page, two-finger pinch zooms in and
-  out around the midpoint. Multi-touch goes through the DevTools protocol
+  one-finger drag pans at initial fit and when zoomed (including the map's
+  viewport margin), two-finger pinch zooms in and out around the midpoint, and a
+  pinch whose second finger lands on a marker leaves that marker unmoved.
+  Multi-touch goes through the DevTools protocol
   (`Input.dispatchTouchEvent`) because Playwright's `touchscreen` helper can only
   tap; the CDP session is reused per page because Chromium tracks the touch
   stream per session.

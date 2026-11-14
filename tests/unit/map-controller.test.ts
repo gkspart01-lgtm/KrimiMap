@@ -21,13 +21,18 @@ describe('MapController: fit', () => {
 		expect(controller.camera.zoom).toBeCloseTo((800 / 2400) * 0.94, 6);
 	});
 
-	it('cannot pan while the map is smaller than the viewport', () => {
+	it('can pan a fitted map within the viewport margins before the edge clamps', () => {
 		const controller = new MapController({ map: MAP, viewport: VIEWPORT });
 		const before = controller.camera;
 		controller.pointerDown({ id: 1, x: 100, y: 100 });
-		controller.pointerMove({ id: 1, x: 300, y: 300 });
+		controller.pointerMove({ id: 1, x: 120, y: 120 });
 		controller.pointerUp(1);
-		expect(controller.camera).toEqual(before);
+		expect(controller.camera.x).toBeLessThan(before.x);
+		expect(controller.camera.y).toBeLessThan(before.y);
+		// The map stays inside the viewport with no allowance, so it stops once
+		// its edge reaches the screen edge rather than disappearing off-screen.
+		expect((before.x - controller.camera.x) * before.zoom).toBeLessThanOrEqual(25);
+		expect((before.y - controller.camera.y) * before.zoom).toBeLessThanOrEqual(50);
 	});
 });
 
