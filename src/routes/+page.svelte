@@ -11,6 +11,9 @@
 	const sha = import.meta.env.VITE_BUILD_SHA;
 
 	const buildDate = $derived(buildAt ? formatDateTime(buildAt) : '');
+	const stampParts = $derived(
+		[buildLabel, buildNumber ? `#${buildNumber}` : '', buildDate].filter(Boolean) as string[]
+	);
 	const shortSha = $derived(sha ? sha.slice(0, 7) : '');
 	const commitUrl = $derived(sha && repo ? `https://github.com/${repo}/commit/${sha}` : undefined);
 </script>
@@ -47,11 +50,8 @@
 			</ul>
 			{#if buildLabel}
 				<p class="small muted" data-testid="build-info">
-					{t('landing.debug.build')}: {buildLabel}{#if buildNumber}
-						· #{buildNumber}{/if}{#if buildDate}
-						· {buildDate}{/if}{#if commitUrl}
-						·
-						<a href={commitUrl} target="_blank" rel="noreferrer"><code>{shortSha}</code></a>{/if}
+					{t('landing.debug.build')}: {stampParts.join(' · ')}{#if commitUrl}
+						· <a href={commitUrl} target="_blank" rel="noreferrer"><code>{shortSha}</code></a>{/if}
 				</p>
 			{/if}
 		</div>
