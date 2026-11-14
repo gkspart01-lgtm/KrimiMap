@@ -245,3 +245,39 @@ test('pinching over a marker zooms instead of dragging the marker', async ({ pag
 	await page.getByRole('button', { name: 'Eigenschaften' }).click();
 	await expect(coords).toHaveText(before);
 });
+
+test('touch tap selects a marker and a second tap on empty map clears it', async ({ page }) => {
+	await page.goto('/cases/');
+	await page.getByRole('button', { name: 'Neuer Fall' }).click();
+	await page.waitForURL(/\/editor\/\?id=/);
+	await waitForMap(page);
+
+	await page.getByRole('button', { name: '+ Hinweis' }).click();
+	await expect(page.getByTestId('entity-form')).toBeVisible();
+	const coords = page.getByTestId('entity-form').locator('.coords');
+	const text = (await coords.textContent()) ?? '';
+	const match = /x (\d+) · y (\d+)/.exec(text);
+	if (!match) throw new Error(`unexpected marker coordinates: ${text}`);
+	const world = { x: Number(match[1]), y: Number(match[2]) };
+
+	// Close the properties drawer; tap an empty spot to deselect.
+	await page.getByRole('button', { name: 'Eigenschaften' }).click();
+	const box = await page.locator('canvas').boundingBox();
+	if (!box) throw new Error('canvas has no box');
+	const t = (type: 'touchStart' | 'touchEnd', points: { id: number; x: number; y: number }[]) =>
+		dispatchTouch(page, type, points);
+	await t('touchStart', [{ id: 7, x: box.x + 40, y: box.y + 80 }]);
+	await t('touchEnd', []);
+	await expect(page.getByTestId('entity-form')).toHaveCount(0);
+
+	// Recompute the screen point from the live camera, then tap the marker.
+	const camera = await readCamera(page);
+	const marker = {
+		x: box.x + box.width / 2 + (world.x - camera.x) * camera.zoom,
+		y: box.y + box.height / 2 + (world.y - camera.y) * camera.zoom
+	};
+	await t('touchStart', [{ id: 8, ...marker }]);
+	await t('touchEnd', []);
+	await expect(page.getByTestId('entity-form')).toBeVisible();
+	await expect(page.getByTestId('entity-form').locator('.coords')).toHaveText(text);
+});
