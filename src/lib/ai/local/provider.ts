@@ -11,7 +11,10 @@ import type { LoadedEngine } from './webllm-spike';
 
 export interface AiSupport {
 	ok: boolean;
-	reason?: string;
+	/** Stable reason code so the UI can translate it instead of showing runtime text. */
+	code?: 'no-webgpu' | 'no-model';
+	/** Untranslated runtime detail, shown only for diagnostics. */
+	detail?: string;
 }
 
 export interface AiProgress {
@@ -41,11 +44,10 @@ export async function createLocalDraftProvider(): Promise<DraftProvider> {
 	const support = async (): Promise<AiSupport> => {
 		const gpu = await spike.detectGpu();
 		if (!gpu.supported) {
-			return { ok: false, reason: gpu.reason ?? 'WebGPU ist in diesem Browser nicht verfügbar.' };
+			return { ok: false, code: 'no-webgpu', detail: gpu.reason };
 		}
 		const models = await spike.availableModels();
-		if (models.length === 0)
-			return { ok: false, reason: 'Kein passendes lokales Modell verfügbar.' };
+		if (models.length === 0) return { ok: false, code: 'no-model' };
 		modelId = models[0].id;
 		return { ok: true };
 	};

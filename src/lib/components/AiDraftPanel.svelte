@@ -13,6 +13,7 @@
 	let { onapply, onclose }: { onapply: (draft: CaseDraft) => void; onclose: () => void } = $props();
 
 	let session = $state({ ...INITIAL_AI_SESSION });
+	let unavailableDetail = $state('');
 	let topic = $state('');
 	let provider: DraftProvider | null = null;
 	let dialog = $state<HTMLDialogElement | null>(null);
@@ -30,10 +31,11 @@
 			const { createLocalDraftProvider } = await import('#lib/ai/local/provider');
 			provider = await createLocalDraftProvider();
 			const support = await provider.support();
+			unavailableDetail = support.detail ?? '';
 			dispatch(
 				support.ok
 					? { type: 'ready' }
-					: { type: 'unavailable', reason: support.reason ?? t('ai.unavailable') }
+					: { type: 'unavailable', reason: t(`ai.unavailable.${support.code ?? 'no-webgpu'}`) }
 			);
 		})().catch((cause: unknown) => {
 			dispatch({
@@ -105,6 +107,12 @@
 	</p>
 
 	{#if session.status === 'unavailable'}
+		{#if unavailableDetail}
+			<details class="detail">
+				<summary>{t('ai.unavailable.detail')}</summary>
+				<code>{unavailableDetail}</code>
+			</details>
+		{/if}
 		<p class="muted small">{t('ai.not.applied')}</p>
 	{/if}
 
@@ -241,5 +249,10 @@
 	details {
 		margin-top: 0.4rem;
 		font-size: 0.8rem;
+	}
+	.detail code {
+		display: block;
+		margin-top: 0.25rem;
+		word-break: break-word;
 	}
 </style>
