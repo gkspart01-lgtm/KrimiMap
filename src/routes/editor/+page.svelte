@@ -418,7 +418,10 @@
 	.workspace {
 		position: fixed;
 		/* Below the site header, so the header stays visible and clickable. */
-		inset: var(--header-height) 0 0 0;
+		inset: var(--header-height) 0 auto 0;
+		/* `dvh` keeps the drawer above the phone's browser chrome. */
+		height: calc(100vh - var(--header-height));
+		height: calc(100dvh - var(--header-height));
 		background: #0f1218;
 		overflow: hidden;
 	}

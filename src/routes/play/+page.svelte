@@ -208,7 +208,14 @@
 <style>
 	.play-workspace {
 		position: fixed;
-		inset: var(--header-height) 0 0;
+		/*
+		 * Size to the visible viewport: on a phone the layout viewport can be
+		 * taller than the painted area (browser chrome), which used to push the
+		 * bottom sheet's last pixels off screen. `vh` stays as the fallback.
+		 */
+		inset: var(--header-height) 0 auto;
+		height: calc(100vh - var(--header-height));
+		height: calc(100dvh - var(--header-height));
 		overflow: hidden;
 		background: #eee5d3;
 	}
@@ -379,6 +386,7 @@
 			/* Keep the touchable map separate from the bottom-sheet controls. */
 			height: auto;
 			bottom: calc(45vh + 1.2rem);
+			bottom: calc(45dvh + 1.2rem);
 		}
 
 		.play-panel {
@@ -388,7 +396,9 @@
 			bottom: 0.6rem;
 			width: auto;
 			height: 45vh;
+			height: 45dvh;
 			max-height: 45vh;
+			max-height: 45dvh;
 		}
 	}
 </style>

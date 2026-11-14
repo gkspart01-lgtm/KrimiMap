@@ -111,11 +111,13 @@
 		.notice.install.play-route {
 			/* Keep global notices above the play bottom-sheet, not on top of clues. */
 			bottom: calc(45vh + 1.2rem);
+			bottom: calc(45dvh + 1.2rem);
 		}
 
 		:global(body:has(.workspace.panel-open)) .notice {
 			/* The editor drawer also uses the lower screen on small devices. */
 			bottom: calc(42vh + 5.35rem);
+			bottom: calc(42dvh + 5.35rem);
 		}
 	}
 
