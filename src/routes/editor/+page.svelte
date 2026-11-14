@@ -8,6 +8,7 @@
 	import type { EntityKind } from '#lib/domain/case-document';
 	import { ENTITY_KINDS, ENTITY_KIND_COLORS } from '#lib/domain/case-document';
 	import { SHARED_MAP_DOCUMENT } from '#lib/domain/map-document';
+	import { findMarkerPosition } from '#lib/game/marker-placement';
 	import { listCaseDocuments } from '#lib/storage/db';
 	import { debug } from '#lib/ui/debug.svelte';
 	import { formatNumber, t, tIssue } from '#lib/i18n/index.svelte';
@@ -162,32 +163,21 @@
 		lastSelectedId = id;
 	});
 
-	/**
-	 * New markers land near the view centre, but never on top of an existing one:
-	 * the golden-angle spiral finds the first free spot, so repeated clicks
-	 * produce a readable cluster instead of a single unclickable stack.
-	 */
+	/** Choose a free location, with map-space fallbacks if the camera is beyond the image. */
 	function freePosition(): { x: number; y: number } {
-		const centre = handle?.camera() ?? { x: 1200, y: 800, zoom: 1 };
-		const size = SHARED_MAP_DOCUMENT;
-		const entities = store.current?.entities ?? [];
-		const clampAxis = (value: number, max: number) => Math.min(max - 50, Math.max(50, value));
-		const isFree = (candidate: { x: number; y: number }) =>
-			!entities.some(
-				(entity) =>
-					Math.hypot(entity.position.x - candidate.x, entity.position.y - candidate.y) < 90
-			);
-
-		for (let index = 0; index < 60; index += 1) {
-			const angle = index * 2.399963;
-			const radius = 70 + 30 * Math.sqrt(index);
-			const candidate = {
-				x: clampAxis(centre.x + Math.cos(angle) * radius, size.width),
-				y: clampAxis(centre.y + Math.sin(angle) * radius, size.height)
-			};
-			if (isFree(candidate)) return candidate;
-		}
-		return { x: clampAxis(centre.x, size.width), y: clampAxis(centre.y, size.height) };
+		const camera = handle?.camera() ?? { x: 1200, y: 800, zoom: 1 };
+		const map = SHARED_MAP_DOCUMENT;
+		return findMarkerPosition({
+			camera,
+			map,
+			viewport: {
+				width: host?.clientWidth ?? map.width * camera.zoom,
+				height: host?.clientHeight ?? map.height * camera.zoom
+			},
+			compact:
+				window.matchMedia('(max-width: 46rem), (max-height: 32rem)').matches || camera.zoom < 0.25,
+			existing: store.current?.entities ?? []
+		});
 	}
 
 	function addEntity(kind: EntityKind) {
@@ -458,74 +448,12 @@
 		-webkit-user-drag: none;
 	}
 
-	:global(.krimimap-map-marker-icon) {
-		background: none;
-		border: 0;
-		overflow: visible;
-	}
-
-	:global(.krimimap-map-marker) {
-		width: max-content;
-		height: 34px;
-		display: inline-flex;
-		align-items: center;
-		gap: 0.4rem;
-		white-space: nowrap;
-		transform: translateX(-2px);
-		pointer-events: auto;
-		cursor: grab;
-		filter: drop-shadow(0 2px 3px rgba(25, 30, 36, 0.35));
-	}
-
-	:global(.krimimap-map-marker__dot) {
-		width: 26px;
-		height: 26px;
-		flex: 0 0 26px;
-		border: 3px solid #f8f4ec;
-		border-radius: 50%;
-		background: var(--entity-color);
-		box-shadow: 0 0 0 2px color-mix(in srgb, var(--entity-color) 85%, #2a2d32);
-	}
-
-	:global(.krimimap-map-marker__label) {
-		max-width: 18rem;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		padding: 0.2rem 0.42rem;
-		border: 1px solid rgba(104, 91, 69, 0.5);
-		border-radius: 5px;
-		background: rgba(249, 244, 232, 0.94);
-		color: #38352f;
-		font-size: 0.78rem;
-		font-weight: 700;
-		box-shadow: 0 1px 3px rgba(38, 35, 30, 0.18);
-	}
-
-	:global(.krimimap-map-marker.is-selected .krimimap-map-marker__dot) {
-		box-shadow:
-			0 0 0 3px #fff,
-			0 0 0 6px rgba(40, 53, 67, 0.78);
-	}
-
-	:global(.krimimap-map-marker.is-inactive) {
-		filter: grayscale(1);
-		opacity: 0.34;
-		cursor: default;
-		pointer-events: none;
-	}
-
-	:global(.krimimap-map-marker.is-inactive .krimimap-map-marker__label) {
-		border-color: rgba(100, 100, 100, 0.24);
-		background: rgba(220, 220, 220, 0.45);
-		color: #777;
-	}
-
 	.hud,
 	.toolbar,
 	.panel {
 		position: absolute;
 		z-index: 2;
-		background: rgba(18, 21, 27, 0.9);
+		background: rgba(18, 21, 27, 0.97);
 		border: 1px solid var(--border);
 		border-radius: 10px;
 		backdrop-filter: blur(6px);
@@ -577,6 +505,7 @@
 		gap: 0.6rem;
 		padding: 0.75rem;
 		overflow-y: auto;
+		box-shadow: 0 14px 38px rgba(0, 0, 0, 0.36);
 	}
 
 	.panel-head {
@@ -688,9 +617,10 @@
 	.challenge-form {
 		display: grid;
 		gap: 0.45rem;
-		padding: 0.65rem 0;
-		border-top: 1px solid var(--border);
-		border-bottom: 1px solid var(--border);
+		padding: 0.75rem;
+		border: 1px solid var(--border);
+		border-radius: 10px;
+		background: rgba(255, 255, 255, 0.035);
 	}
 
 	.challenge-form h2 {
@@ -724,8 +654,10 @@
 	.entity-form {
 		display: grid;
 		gap: 0.5rem;
-		padding-top: 0.6rem;
-		border-top: 1px solid var(--border);
+		padding: 0.75rem;
+		border: 1px solid var(--border);
+		border-radius: 10px;
+		background: rgba(255, 255, 255, 0.035);
 	}
 
 	.entity-form label {

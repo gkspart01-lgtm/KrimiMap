@@ -1,6 +1,6 @@
 <script lang="ts">
 	/* eslint-disable svelte/no-navigation-without-resolve -- routes include a case id query */
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import { page } from '$app/state';
 	import { asset, resolve } from '$app/paths';
 	import type { EditorMapHandle } from '#lib/game/createLeafletEditor';
@@ -18,6 +18,7 @@
 	let discoveredClueIds = $state<string[]>([]);
 	let selectedAnswerId = $state('');
 	let hintVisible = $state(false);
+	let hintElement = $state<HTMLParagraphElement | null>(null);
 	let solved = $state(false);
 	let feedbackKey = $state<'answer.required' | 'find.clue' | 'incorrect' | 'correct' | null>(null);
 
@@ -66,6 +67,11 @@
 		} else {
 			feedbackKey = 'incorrect';
 		}
+	}
+
+	function revealHint() {
+		hintVisible = true;
+		void tick().then(() => hintElement?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
 	}
 
 	onMount(() => {
@@ -153,13 +159,15 @@
 				</section>
 				{#if document.challenge.hint}
 					<div class="hint-area">
-						<button type="button" onclick={() => (hintVisible = true)} disabled={hintVisible}>
+						<button type="button" onclick={revealHint} disabled={hintVisible}>
 							{t('play.hint.reveal')}
 						</button>
-						{#if hintVisible}<p data-testid="play-hint">
-								<strong>{t('play.hint.title')}:</strong>
-								{document.challenge.hint}
-							</p>{/if}
+						{#if hintVisible}
+							<p bind:this={hintElement} class="hint-card" role="status" data-testid="play-hint">
+								<strong>{t('play.hint.title')}</strong>
+								<span>{document.challenge.hint}</span>
+							</p>
+						{/if}
 					</div>
 				{/if}
 				<label class="answer-field">
@@ -206,6 +214,7 @@
 	}
 	.play-map {
 		position: absolute;
+		z-index: 0;
 		inset: 0;
 		touch-action: none;
 	}
@@ -229,11 +238,6 @@
 		background: #eee5d3;
 		font-family: system-ui, sans-serif;
 	}
-	:global(.krimimap-map-marker-icon) {
-		background: none;
-		border: 0;
-		overflow: visible;
-	}
 	.play-panel {
 		position: absolute;
 		z-index: 2;
@@ -246,9 +250,11 @@
 		gap: 0.65rem;
 		padding: 0.8rem;
 		overflow-y: auto;
+		scroll-padding-block: 0.75rem;
 		border: 1px solid var(--border);
 		border-radius: 12px;
-		background: rgba(18, 21, 27, 0.94);
+		background: rgba(18, 21, 27, 0.98);
+		box-shadow: 0 14px 38px rgba(0, 0, 0, 0.38);
 		backdrop-filter: blur(7px);
 	}
 	.play-head {
@@ -269,22 +275,75 @@
 	.play-objective,
 	.play-inspector,
 	.hint-area {
-		padding: 0.55rem;
+		padding: 0.75rem;
 		border: 1px solid var(--border);
+		border-radius: 10px;
+		background: rgba(255, 255, 255, 0.035);
+	}
+	.play-objective > strong {
+		display: block;
+		margin-bottom: 0.25rem;
+		color: var(--accent);
+		font-size: 0.72rem;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+	}
+	.play-objective p,
+	.play-inspector p {
+		margin: 0.3rem 0 0;
+	}
+	.hint-area {
+		border-color: rgba(240, 180, 41, 0.32);
+		background: rgba(240, 180, 41, 0.045);
+	}
+	.hint-card {
+		display: grid;
+		gap: 0.3rem;
+		margin: 0.55rem 0 0;
+		padding: 0.7rem 0.75rem;
+		scroll-margin-block: 0.75rem;
+		border: 1px solid rgba(240, 180, 41, 0.35);
+		border-left: 3px solid var(--accent);
 		border-radius: 8px;
-		background: rgba(255, 255, 255, 0.025);
+		background: linear-gradient(135deg, rgba(240, 180, 41, 0.14), rgba(255, 255, 255, 0.025));
+		color: var(--text);
+		font-size: 0.88rem;
+		line-height: 1.45;
+		overflow-wrap: anywhere;
+	}
+	.hint-card strong {
+		color: var(--accent);
+		font-size: 0.72rem;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
 	}
 	.play-progress {
+		align-self: flex-start;
 		margin: 0;
+		padding: 0.22rem 0.6rem;
+		border: 1px solid rgba(240, 180, 41, 0.25);
+		border-radius: 999px;
+		background: rgba(240, 180, 41, 0.08);
 		color: var(--accent);
-		font-size: 0.85rem;
+		font-size: 0.78rem;
 		font-weight: 650;
 	}
-	.kind {
+	.play-inspector strong {
 		display: block;
-		margin-top: 0.15rem;
+		font-size: 0.95rem;
+	}
+	.kind {
+		display: inline-flex;
+		align-items: center;
+		margin-top: 0.3rem;
+		padding: 0.12rem 0.45rem;
+		border-radius: 999px;
+		background: var(--bg-raised);
 		color: var(--text-dim);
-		font-size: 0.74rem;
+		font-size: 0.68rem;
+		font-weight: 650;
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
 	}
 	.answer-field {
 		display: grid;
@@ -316,12 +375,19 @@
 		text-align: center;
 	}
 	@media (max-width: 46rem) {
+		.play-map {
+			/* Keep the touchable map separate from the bottom-sheet controls. */
+			height: auto;
+			bottom: calc(45vh + 1.2rem);
+		}
+
 		.play-panel {
 			top: auto;
 			left: 0.6rem;
 			right: 0.6rem;
 			bottom: 0.6rem;
 			width: auto;
+			height: 45vh;
 			max-height: 45vh;
 		}
 	}

@@ -7,31 +7,56 @@
 		promptInstall
 	} from '#lib/pwa/state.svelte';
 	import { t } from '#lib/i18n/index.svelte';
+	import { page } from '$app/state';
 
 	const notice = $derived(pwa().state);
 	const canInstall = $derived(pwa().canInstall);
+	const playRoute = $derived(page.url.pathname.endsWith('/play/'));
 </script>
 
 {#if notice.phase === 'offline-ready'}
-	<div class="notice" role="status" data-testid="pwa-banner" data-phase="offline-ready">
+	<div
+		class="notice"
+		class:play-route={playRoute}
+		role="status"
+		data-testid="pwa-banner"
+		data-phase="offline-ready"
+	>
 		<span>{t('pwa.offlineReady')}</span>
 		<button type="button" onclick={dismissNotice}>{t('pwa.ok')}</button>
 	</div>
 {:else if notice.phase === 'update-available'}
-	<div class="notice" role="status" data-testid="pwa-banner" data-phase="update-available">
+	<div
+		class="notice"
+		class:play-route={playRoute}
+		role="status"
+		data-testid="pwa-banner"
+		data-phase="update-available"
+	>
 		<span>{t('pwa.update')}</span>
 		<button type="button" class="primary" onclick={applyUpdate}>{t('pwa.reload')}</button>
 		<button type="button" onclick={dismissNotice}>{t('pwa.later')}</button>
 	</div>
 {:else if notice.phase === 'error'}
-	<div class="notice error" role="alert" data-testid="pwa-banner" data-phase="error">
+	<div
+		class="notice error"
+		class:play-route={playRoute}
+		role="alert"
+		data-testid="pwa-banner"
+		data-phase="error"
+	>
 		<span>{t('pwa.cacheError', { message: notice.error ?? '' })}</span>
 		<button type="button" onclick={dismissNotice}>{t('pwa.ok')}</button>
 	</div>
 {/if}
 
 {#if canInstall}
-	<div class="notice install" role="status" data-testid="install-banner">
+	<div
+		class="notice install"
+		class:play-route={playRoute}
+		role="status"
+		data-testid="install-banner"
+	>
 		<span>{t('pwa.install.question')}</span>
 		<button type="button" class="primary" onclick={promptInstall}>{t('pwa.install.button')}</button>
 		<button
@@ -79,6 +104,19 @@
 
 	.notice.install {
 		bottom: 4.5rem;
+	}
+
+	@media (max-width: 46rem) {
+		.notice.play-route,
+		.notice.install.play-route {
+			/* Keep global notices above the play bottom-sheet, not on top of clues. */
+			bottom: calc(45vh + 1.2rem);
+		}
+
+		:global(body:has(.workspace.panel-open)) .notice {
+			/* The editor drawer also uses the lower screen on small devices. */
+			bottom: calc(42vh + 5.35rem);
+		}
 	}
 
 	button {

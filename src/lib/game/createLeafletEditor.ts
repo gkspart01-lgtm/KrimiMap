@@ -1,5 +1,6 @@
 import L, { type Map as LeafletMap, type Marker as LeafletMarker } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import './leaflet-markers.css';
 import type { CaseDocument, CaseEntity, CasePoint } from '#lib/domain/case-document';
 import { SHARED_MAP_DOCUMENT } from '#lib/domain/map-document';
 
@@ -35,6 +36,7 @@ const MIN_SCALE = 0.15;
 const MAX_SCALE = 4;
 const BUTTON_ZOOM_STEP = Math.log2(1.25);
 const INACTIVE_PANE = 'inactiveCasePane';
+const COMPACT_MARKER_QUERY = '(max-width: 46rem), (max-height: 32rem)';
 
 function pointToLatLng(point: CasePoint): L.LatLng {
 	// CRS.Simple has an upward-positive y-axis; our case coordinates start at top-left.
@@ -56,8 +58,8 @@ function createEntityIcon(entity: CaseEntity, inactive: boolean): L.DivIcon {
 	return L.divIcon({
 		className: 'krimimap-map-marker-icon',
 		html: root,
-		iconSize: [34, 34],
-		iconAnchor: [17, 17]
+		iconSize: [44, 44],
+		iconAnchor: [22, 22]
 	});
 }
 
@@ -112,8 +114,13 @@ export function createLeafletEditor(parent: HTMLElement, options: Options): Edit
 	const activeLayer = L.layerGroup().addTo(map);
 	const inactiveLayer = L.layerGroup().addTo(map);
 	const activeMarkers = new Map<string, LeafletMarker>();
+	const compactMarkerMedia = window.matchMedia(COMPACT_MARKER_QUERY);
+	const updateCompactMarkers = (scale: number) => {
+		parent.dataset.compactMarkers = String(scale < 0.25 || compactMarkerMedia.matches);
+	};
 	const resizeObserver = new ResizeObserver(() => {
 		map.invalidateSize({ pan: false, debounceMoveend: true });
+		updateCompactMarkers(Math.pow(2, map.getZoom()));
 	});
 	resizeObserver.observe(parent);
 
@@ -130,6 +137,7 @@ export function createLeafletEditor(parent: HTMLElement, options: Options): Edit
 		parent.dataset.zoom = state.zoom.toFixed(4);
 		parent.dataset.cameraX = state.x.toFixed(2);
 		parent.dataset.cameraY = state.y.toFixed(2);
+		updateCompactMarkers(state.zoom);
 		options.onCamera?.(state);
 	};
 
